@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Report an Error | Mpumalanga Local Time</title>
+  <meta name="description" content="Submit a correction request, error report or update to Mpumalanga Local Time." />
+  <link rel="canonical" href="https://mplocaltime.co.za/report-error.html">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home">
+          <div style="display:flex;align-items:center;gap:12px">
+            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
+            <div>
+              <strong class="site-title">Mpumalanga Local Time</strong>
+              <span class="site-tagline">Report an error</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation">
+        <a href="/trust-centre.html">Trust Centre</a>
+        <a href="/contact.html">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding:40px 0;">
+    <section class="card">
+      <div class="card-content">
+        <p class="story-badge">Correction request</p>
+        <h1>Tell us about a possible error</h1>
+        <p>If you noticed incorrect information, a broken link, outdated reporting or a problem with a published article, please let us know.</p>
+        <form id="correctionForm" style="display:grid;gap:14px;margin-top:18px;">
+          <label>
+            <span>Your name</span>
+            <input name="name" type="text" required style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;" />
+          </label>
+          <label>
+            <span>Email address</span>
+            <input name="email" type="email" required style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;" />
+          </label>
+          <label>
+            <span>Article URL</span>
+            <input name="articleUrl" type="url" placeholder="https://" style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;" />
+          </label>
+          <label>
+            <span>Issue type</span>
+            <select name="issueType" style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;">
+              <option value="Incorrect information">Incorrect information</option>
+              <option value="Broken link">Broken link</option>
+              <option value="Incorrect photo">Incorrect photo</option>
+              <option value="Outdated information">Outdated information</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label>
+            <span>What is the issue?</span>
+            <textarea name="description" rows="5" required style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;resize:vertical;"></textarea>
+          </label>
+          <label>
+            <span>Supporting documents or links</span>
+            <textarea name="supportingDocuments" rows="3" placeholder="Add links or notes that help verify the correction." style="width:100%;padding:12px 14px;border:1px solid #dfe3e8;border-radius:12px;resize:vertical;"></textarea>
+          </label>
+          <button class="btn primary" type="submit">Submit correction request</button>
+          <div id="correctionMessage" class="meta"></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('correctionForm');
+    const message = document.getElementById('correctionMessage');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const payload = Object.fromEntries(formData.entries());
+      try {
+        const response = await fetch('/api/corrections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to submit correction request.');
+        message.textContent = 'Thank you. Your correction request has been received.';
+        form.reset();
+      } catch (error) {
+        message.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>

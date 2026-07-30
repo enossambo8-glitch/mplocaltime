@@ -464,54 +464,75 @@ const app = (() => {
       const categoryStories = getCategoryStories(stories, category.id, excludedIds);
       const featuredStory = categoryStories[0] || null;
       const supportingStories = categoryStories.slice(1, 5);
+      const sidebarWidgets = [
+        { title: 'Advertisement', body: 'Premium sponsor placement for local businesses and campaigns.' },
+        { title: 'Sponsored story', body: 'Featured partner content that complements the main report.' },
+        { title: 'Featured artist', body: 'A spotlight on the creative economy and cultural programming.' },
+      ];
+
       return `
         <article class="category-panel ${category.accentClass}" aria-labelledby="${category.id}-title">
-          <a class="category-panel-head" href="${category.href}" aria-label="Open ${escapeHTML(category.title)} stories">
-            <div class="category-panel-heading">
-              <span class="category-icon" aria-hidden="true">${category.icon}</span>
-              <div>
-                <h3 id="${category.id}-title" class="category-panel-title">${escapeHTML(category.title)}</h3>
-                <p class="category-panel-description">${escapeHTML(category.description)}</p>
-              </div>
-            </div>
-          </a>
-          <div class="category-panel-stories">
-            ${featuredStory ? `
-              <a class="premium-feature-card" href="/news.html?story=${featuredStory.id}" aria-label="${escapeHTML(featuredStory.title)}">
-                <img src="${featuredStory.image}" alt="${escapeHTML(featuredStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 40vw">
-                <div class="premium-feature-card-body">
-                  <div class="premium-topline">
-                    <span class="premium-badge">${escapeHTML(featuredStory.category)}</span>
-                    <span class="premium-meta">${escapeHTML(featuredStory.date)}</span>
-                  </div>
-                  <h4>${escapeHTML(featuredStory.title)}</h4>
-                  <p>${escapeHTML(featuredStory.excerpt)}</p>
-                  <div class="premium-story-footer">
-                    <div class="premium-story-details">
-                      <span>By ${escapeHTML(featuredStory.author)}</span>
-                      <span>${featuredStory.readingTime} min</span>
-                      <span>${featuredStory.views || 0} views</span>
-                      <span>${featuredStory.comments || 0} comments</span>
-                    </div>
-                  </div>
+          <div class="category-panel-top">
+            <a class="category-panel-head" href="${category.href}" aria-label="Open ${escapeHTML(category.title)} stories">
+              <div class="category-panel-heading">
+                <span class="category-icon" aria-hidden="true">${category.icon}</span>
+                <div>
+                  <h3 id="${category.id}-title" class="category-panel-title">${escapeHTML(category.title)}</h3>
+                  <p class="category-panel-description">${escapeHTML(category.description)}</p>
                 </div>
-              </a>
-            ` : ''}
-            <div class="premium-supporting-grid">
-              ${supportingStories.map((story) => `
-                <a class="premium-story-card" href="/news.html?story=${story.id}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
-                  <img src="${story.image}" alt="${escapeHTML(story.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw">
-                  <div class="premium-story-card-body">
+              </div>
+            </a>
+            <span class="section-pill">${escapeHTML(category.title)}</span>
+          </div>
+
+          <div class="category-panel-layout">
+            <div class="category-panel-main">
+              ${featuredStory ? `
+                <a class="premium-feature-card" href="/news.html?story=${featuredStory.id}" aria-label="${escapeHTML(featuredStory.title)}">
+                  <img src="${featuredStory.image}" alt="${escapeHTML(featuredStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 40vw">
+                  <div class="premium-feature-card-body">
                     <div class="premium-topline">
-                      <span class="premium-badge">${escapeHTML(story.category)}</span>
-                      <span class="premium-meta">${escapeHTML(story.date)}</span>
+                      <span class="premium-badge">Featured</span>
+                      <span class="premium-meta">${escapeHTML(featuredStory.date)}</span>
                     </div>
-                    <h4>${escapeHTML(story.title)}</h4>
-                    <p>${escapeHTML(story.excerpt)}</p>
+                    <h4>${escapeHTML(featuredStory.title)}</h4>
+                    <p>${escapeHTML(featuredStory.excerpt)}</p>
+                    <div class="premium-story-footer">
+                      <div class="premium-story-details">
+                        <span>By ${escapeHTML(featuredStory.author)}</span>
+                        <span>${featuredStory.readingTime} min</span>
+                        <span>${featuredStory.views || 0} views</span>
+                        <span>${featuredStory.comments || 0} comments</span>
+                      </div>
+                    </div>
                   </div>
                 </a>
-              `).join('')}
+              ` : ''}
+
+              <div class="premium-supporting-grid">
+                ${supportingStories.map((story) => `
+                  <a class="premium-story-card" href="/news.html?story=${story.id}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
+                    <div class="premium-story-card-body">
+                      <div class="premium-topline">
+                        <span class="premium-badge">${escapeHTML(story.category)}</span>
+                        <span class="premium-meta">${escapeHTML(story.date)}</span>
+                      </div>
+                      <h4>${escapeHTML(story.title)}</h4>
+                      <p>${escapeHTML(story.excerpt)}</p>
+                    </div>
+                  </a>
+                `).join('')}
+              </div>
             </div>
+
+            <aside class="category-panel-sidebar">
+              ${sidebarWidgets.map((widget) => `
+                <div class="sidebar-widget">
+                  <div class="sidebar-widget-label">${escapeHTML(widget.title)}</div>
+                  <p>${escapeHTML(widget.body)}</p>
+                </div>
+              `).join('')}
+            </aside>
           </div>
         </article>
       `;

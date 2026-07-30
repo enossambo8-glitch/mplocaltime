@@ -65,6 +65,37 @@ async function initializeDatabase() {
         municipality TEXT,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
       );
+      CREATE TABLE IF NOT EXISTS editorial_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL UNIQUE,
+        quality_score REAL DEFAULT 0,
+        grammar_score REAL DEFAULT 0,
+        readability_score REAL DEFAULT 0,
+        seo_score REAL DEFAULT 0,
+        originality_score REAL DEFAULT 0,
+        headline_score REAL DEFAULT 0,
+        human_writing_confidence REAL DEFAULT 0,
+        ai_writing_probability REAL DEFAULT 0,
+        confidence_level TEXT DEFAULT 'medium',
+        fact_check_status TEXT DEFAULT 'needs-verification',
+        sources_count INTEGER DEFAULT 0,
+        quotes_count INTEGER DEFAULT 0,
+        images_count INTEGER DEFAULT 0,
+        reading_time INTEGER DEFAULT 0,
+        recommendations TEXT,
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS revision_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        action TEXT,
+        notes TEXT,
+        created_at TEXT,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+      );
       CREATE TABLE IF NOT EXISTS comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         story_id INTEGER NOT NULL,
@@ -72,6 +103,18 @@ async function initializeDatabase() {
         text TEXT,
         at TEXT,
         FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS correction_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT,
+        article_url TEXT,
+        issue_type TEXT,
+        description TEXT,
+        supporting_documents TEXT,
+        status TEXT DEFAULT 'new',
+        created_at TEXT,
+        updated_at TEXT
       );
       CREATE TABLE IF NOT EXISTS media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -700,6 +743,126 @@ function escapeInteger(value) {
   return Number(value || 0);
 }
 
+function buildMarketplaceLandingHtml(req) {
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creative Marketplace | Mpumalanga Local Time</title>
+  <meta name="description" content="Browse digital products, physical products, creative services and artist bookings from Mpumalanga creatives." />
+  <link rel="canonical" href="${req.protocol}://${req.get('host')}/creative-marketplace" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { margin:0; font-family:Inter, Arial, sans-serif; background:#f7f1e8; color:#111; }
+    .shell { max-width:1280px; margin:0 auto; padding:24px 20px 60px; }
+    .hero-card { background:#111; color:#fff; padding:32px; border-radius:28px; display:grid; gap:20px; box-shadow:0 24px 60px rgba(0,0,0,.14); }
+    .hero-grid { display:grid; gap:24px; grid-template-columns:1.2fr 0.8fr; align-items:center; }
+    .market-grid { display:grid; gap:18px; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); margin-top:20px; }
+    .market-card { background:#fff; border-radius:22px; padding:22px; box-shadow:0 12px 30px rgba(0,0,0,.06); display:grid; gap:10px; }
+    .badge { display:inline-block; padding:7px 10px; border-radius:999px; background:#f3e8db; color:#6b2d07; font-size:.8rem; font-weight:700; width:max-content; }
+    .pill-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .pill { padding:6px 10px; border-radius:999px; background:#f4ebdf; font-size:.8rem; }
+    .link-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
+    .link-row a { color:#c00; font-weight:600; text-decoration:none; }
+    @media (max-width:760px) { .hero-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home">
+          <div style="display:flex;align-items:center;gap:12px">
+            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
+            <div>
+              <strong class="site-title">Mpumalanga Local Time</strong>
+              <span class="site-tagline">Creative Marketplace</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation">
+        <a href="/">Home</a>
+        <a href="/creatives">Creatives</a>
+        <a href="/creative-marketplace">Marketplace</a>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="hero-card">
+      <div class="hero-grid">
+        <div>
+          <span class="badge" style="background:#2b2b2b;color:#fff;">Creative Marketplace</span>
+          <h1 style="margin:12px 0 10px;font-size:clamp(2rem, 3vw, 2.8rem);">Discover products, services and bookings from Mpumalanga creatives.</h1>
+          <p style="margin:0;color:#e4d8ca;line-height:1.7;">From instant-download digital art to live performances, the marketplace brings together creators selling work, offering services and taking bookings in one place.</p>
+        </div>
+        <div style="background:#fff;color:#111;padding:20px;border-radius:20px;display:grid;gap:12px;">
+          <div class="pill-row">
+            <span class="pill">DIGITAL</span>
+            <span class="pill">PHYSICAL</span>
+            <span class="pill">SERVICE</span>
+            <span class="pill">BOOKING</span>
+          </div>
+          <div><strong>Made in Mpumalanga</strong></div>
+          <div>Local creators and verified artists can showcase work, accept bookings and reach new audiences.</div>
+          <div class="link-row">
+            <a href="/creative-marketplace/listings">Browse listings</a>
+            <a href="/creatives">Explore artists</a>
+            <a href="/creatives/opportunities">View opportunities</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="market-grid">
+      <article class="market-card">
+        <span class="badge">Digital Products</span>
+        <h2 style="margin:0;">Download creative work instantly</h2>
+        <p style="margin:0;">eBooks, music, beats, digital art, templates and online courses.</p>
+        <div class="pill-row">
+          <span class="pill">Instant download</span>
+          <span class="pill">No shipping</span>
+        </div>
+      </article>
+      <article class="market-card">
+        <span class="badge">Physical Products</span>
+        <h2 style="margin:0;">Original creations delivered to your door</h2>
+        <p style="margin:0;">Paintings, crafts, jewellery, printed books, clothing and handmade gifts.</p>
+        <div class="pill-row">
+          <span class="pill">Stock and shipping</span>
+          <span class="pill">Handmade</span>
+        </div>
+      </article>
+      <article class="market-card">
+        <span class="badge">Services</span>
+        <h2 style="margin:0;">Hire local creative professionals</h2>
+        <p style="margin:0;">Graphic design, photography, music production, copywriting, branding and more.</p>
+        <div class="pill-row">
+          <span class="pill">Quote-based</span>
+          <span class="pill">Local expertise</span>
+        </div>
+      </article>
+      <article class="market-card">
+        <span class="badge">Book an Artist</span>
+        <h2 style="margin:0;">Book talented creatives for your next event</h2>
+        <p style="margin:0;">Musicians, poets, DJs, dancers, speakers and cultural groups.</p>
+        <div class="pill-row">
+          <span class="pill">Deposits</span>
+          <span class="pill">Date-based bookings</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="market-card" style="margin-top:20px;">
+      <h2 style="margin:0 0 8px;">Why this marketplace works</h2>
+      <p style="margin:0;">It supports a creative economy where artists can sell music, books and art, offer services, accept bookings and build a following from Mpumalanga and beyond.</p>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
 function buildCreativesLandingHtml(req, featuredArtists = [], trendingArtists = [], disciplines = []) {
   return `<!doctype html>
 <html lang="en-ZA">
@@ -1026,6 +1189,181 @@ function buildCreativeDirectoryHtml(title, items, req) {
 </html>`;
 }
 
+function buildMarketplaceListingsHtml(req, listings = []) {
+  const cards = listings.length ? listings.map((listing) => `
+    <article class="listing-card">
+      <div class="listing-top">
+        <span class="badge">${escapeHtml(listing.type || 'Listing')}</span>
+        <span class="badge muted">${escapeHtml(listing.category || 'Creative')}</span>
+      </div>
+      <h3>${escapeHtml(listing.title || 'Creative listing')}</h3>
+      <p>${escapeHtml(listing.description || 'A marketplace offering from Mpumalanga creatives.')}</p>
+      <div class="meta">${escapeHtml(listing.municipality || 'Mpumalanga')} • ${escapeHtml(listing.price || 'Price on request')}</div>
+      <div class="pill-row">
+        ${listing.badges ? listing.badges.split(',').filter(Boolean).map((badge) => `<span class="pill">${escapeHtml(badge.trim())}</span>`).join('') : '<span class="pill">Made in Mpumalanga</span>'}
+      </div>
+      <div class="actions">
+        <a href="/creative-marketplace/artist/${escapeHtml(listing.artistSlug || 'artist')}" class="btn">Artist storefront</a>
+        <a href="#" class="btn secondary">View details</a>
+      </div>
+    </article>
+  `).join('') : '<div class="empty-state">No listings yet. New creative offerings will appear here soon.</div>';
+
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marketplace Listings | Mpumalanga Local Time</title>
+  <meta name="description" content="Browse storefront-style listings for digital products, physical products, services and bookings across Mpumalanga." />
+  <link rel="canonical" href="${req.protocol}://${req.get('host')}/creative-marketplace/listings" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { margin:0; font-family:Inter, Arial, sans-serif; background:#f7f1e8; color:#111; }
+    .shell { max-width:1280px; margin:0 auto; padding:24px 20px 60px; }
+    .filters { background:#fff; border-radius:24px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.06); display:grid; gap:12px; margin-bottom:20px; }
+    .filter-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
+    .filter-grid select, .filter-grid input { width:100%; padding:12px 14px; border-radius:999px; border:1px solid #ddd; font:inherit; }
+    .listing-grid { display:grid; gap:18px; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+    .listing-card { background:#fff; border-radius:24px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.06); display:grid; gap:12px; }
+    .listing-top { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .badge { display:inline-block; padding:7px 10px; border-radius:999px; background:#f3e8db; color:#6b2d07; font-size:.8rem; font-weight:700; }
+    .badge.muted { background:#f4ebdf; color:#111; }
+    .pill-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .pill { padding:6px 10px; border-radius:999px; background:#f4ebdf; font-size:.8rem; }
+    .meta { color:#686868; font-size:.95rem; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; }
+    .btn { display:inline-block; padding:10px 14px; border-radius:999px; background:#c00; color:#fff; text-decoration:none; font-weight:600; }
+    .btn.secondary { background:#f3e8db; color:#111; }
+    .empty-state { background:#fff; border-radius:24px; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,.06); }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home">
+          <div style="display:flex;align-items:center;gap:12px">
+            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
+            <div>
+              <strong class="site-title">Mpumalanga Local Time</strong>
+              <span class="site-tagline">Marketplace listings</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation">
+        <a href="/creative-marketplace">Marketplace</a>
+        <a href="/creatives">Creatives</a>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="filters">
+      <h1 style="margin:0 0 8px;">Marketplace listings</h1>
+      <p style="margin:0 0 12px;">Filter by product type, category, price, municipality or availability.</p>
+      <div class="filter-grid">
+        <select><option>Filter by product type</option><option>Digital</option><option>Physical</option><option>Service</option><option>Booking</option></select>
+        <select><option>Filter by category</option><option>Music</option><option>Visual Arts</option><option>Design</option><option>Performance</option></select>
+        <input type="text" placeholder="Price" />
+        <input type="text" placeholder="Province" />
+        <input type="text" placeholder="Municipality" />
+      </div>
+    </section>
+
+    <section class="listing-grid">
+      ${cards}
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildArtistStorefrontHtml(req, artist) {
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(artist.stage_name || artist.full_name)} | Artist Storefront</title>
+  <meta name="description" content="Visit ${escapeHtml(artist.stage_name || artist.full_name)}'s storefront on Mpumalanga Local Time." />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { margin:0; font-family:Inter, Arial, sans-serif; background:#f7f1e8; color:#111; }
+    .shell { max-width:1200px; margin:0 auto; padding:24px 20px 60px; }
+    .hero-card { background:#111; color:#fff; border-radius:28px; padding:26px; display:grid; gap:16px; }
+    .store-grid { display:grid; gap:18px; grid-template-columns:1.1fr 0.9fr; margin-top:20px; }
+    .card { background:#fff; border-radius:24px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.06); }
+    .pill-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .pill { padding:6px 10px; border-radius:999px; background:#f4ebdf; font-size:.8rem; }
+    .btn { display:inline-block; padding:10px 14px; border-radius:999px; background:#c00; color:#fff; text-decoration:none; font-weight:600; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home"><div style="display:flex;align-items:center;gap:12px"><img src="/logo.png" alt="Mpumalanga Local Time logo" /><div><strong class="site-title">Mpumalanga Local Time</strong><span class="site-tagline">Artist storefront</span></div></div></a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation"><a href="/creative-marketplace">Marketplace</a><a href="/creatives">Creatives</a></nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="hero-card">
+      <div class="pill-row">
+        <span class="pill" style="background:#2b2b2b;color:#fff;">Verified Artist</span>
+        <span class="pill" style="background:#2b2b2b;color:#fff;">Made in Mpumalanga</span>
+      </div>
+      <h1 style="margin:0;">${escapeHtml(artist.stage_name || artist.full_name)}</h1>
+      <p style="margin:0;color:#e4d8ca;">${escapeHtml(artist.bio || 'A creative entrepreneur sharing digital work, physical products, services and bookings on Mpumalanga Local Time.')}</p>
+      <a class="btn" href="#book">Book this artist</a>
+    </section>
+    <section class="store-grid">
+      <div class="card">
+        <h2 style="margin-top:0;">About the studio</h2>
+        <p>${escapeHtml(artist.bio || 'Creative studio profile live on the platform.')}</p>
+        <div class="pill-row">
+          <span class="pill">${escapeHtml(artist.discipline || 'Creative')}</span>
+          <span class="pill">${escapeHtml(artist.municipality || 'Mpumalanga')}</span>
+          <span class="pill">${escapeHtml(artist.availability || 'Available')}</span>
+        </div>
+      </div>
+      <div class="card" id="book">
+        <h2 style="margin-top:0;">Storefront highlights</h2>
+        <ul>
+          <li>Digital products and downloadable content</li>
+          <li>Physical products and custom commissions</li>
+          <li>Service enquiries and booking requests</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+app.get('/creative-marketplace', async (req, res) => {
+  res.send(buildMarketplaceLandingHtml(req));
+});
+
+app.get('/creative-marketplace/listings', async (req, res) => {
+  const listings = [
+    { title: 'Soulful beats pack', description: 'A downloadable collection of original beats for creators and podcasts.', type: 'Digital', category: 'Music', municipality: 'Mbombela', price: 'R120', badges: 'Instant download, Made in Mpumalanga', artistSlug: 'thandi-mkhize' },
+    { title: 'Ceramic wall art', description: 'Handmade ceramic work shaped for homes and galleries.', type: 'Physical', category: 'Visual Arts', municipality: 'Nkomazi', price: 'R450', badges: 'Handmade, Proudly South African', artistSlug: 'sihle-mabaso' },
+    { title: 'Brand identity session', description: 'A collaborative branding package for new businesses and events.', type: 'Service', category: 'Design', municipality: 'Bushbuckridge', price: 'R2 500', badges: 'Quote-based, Verified Artist', artistSlug: 'musa-ndlovu' },
+    { title: 'Live poetry performance', description: 'Book a spoken-word performance for schools, launches and cultural evenings.', type: 'Booking', category: 'Performance', municipality: 'Mbombela', price: 'R3 000', badges: 'Booking, Made in Mpumalanga', artistSlug: 'musa-ndlovu' }
+  ];
+  res.send(buildMarketplaceListingsHtml(req, listings));
+});
+
+app.get('/creative-marketplace/artist/:slug', async (req, res) => {
+  return withDB(async (db) => {
+    const artist = await db.get(`SELECT * FROM artists WHERE slug = ?`, [req.params.slug]);
+    if (!artist) return res.status(404).send('Artist storefront not found');
+    res.send(buildArtistStorefrontHtml(req, artist));
+  });
+});
+
 app.get('/creatives', async (req, res) => {
   return withDB(async (db) => {
     const featuredArtists = await db.all(`SELECT * FROM artists WHERE featured = 1 ORDER BY followers_count DESC LIMIT 6`);
@@ -1302,7 +1640,7 @@ function requireRole(...allowedRoles) {
 
 function normalizeStoryPayload(payload = {}) {
   const status = String(payload.status || 'draft').trim().toLowerCase();
-  const safeStatus = ['draft', 'pending-review', 'fact-check', 'approved', 'published', 'scheduled', 'archived'].includes(status) ? status : 'draft';
+  const safeStatus = ['draft', 'pending-review', 'fact-check', 'approved', 'published', 'scheduled', 'archived', 'needs-changes', 'rejected'].includes(status) ? status : 'draft';
   return {
     title: payload.title || '',
     category: payload.category || 'News',
@@ -1319,6 +1657,68 @@ function normalizeStoryPayload(payload = {}) {
     meta_description: payload.meta_description || payload.metaDescription || '',
     tags: payload.tags || '',
     municipality: payload.municipality || '',
+  };
+}
+
+function countWords(text = '') {
+  return String(text || '').trim().split(/\s+/).filter(Boolean).length;
+}
+
+function estimateReadingTime(text = '') {
+  const words = countWords(text);
+  return Math.max(1, Math.ceil(words / 200));
+}
+
+function analyzeStoryEditorially(story = {}) {
+  const title = String(story.title || '').trim();
+  const content = String(story.content || '').trim();
+  const excerpt = String(story.excerpt || '').trim();
+  const tags = String(story.tags || '').trim();
+  const municipality = String(story.municipality || '').trim();
+  const words = countWords(content);
+  const sentences = content.split(/(?<=[.!?])\s+/).filter(Boolean).length || 1;
+  const avgSentenceLength = Math.round(words / sentences);
+  const paragraphs = content.split(/\n{2,}/).filter(Boolean).length || 1;
+  const avgParagraphLength = Math.round(words / paragraphs);
+  const hasQuotes = /"|“|”|said|added|explained|noted/i.test(content);
+  const hasSources = /source|according to|spokesperson|reported|said|quoted/i.test(content);
+  const hasImage = Boolean(story.featured_image || story.featuredImage || story.image);
+  const hasMeta = Boolean(title && (story.seo_title || story.meta_description || tags || municipality));
+  const grammarScore = Math.min(99, Math.max(70, 89 + (hasQuotes ? 3 : 0) - Math.max(0, avgSentenceLength - 18) * 1.4));
+  const readabilityScore = Math.min(99, Math.max(65, 90 - Math.max(0, avgSentenceLength - 18) * 1.2 + (avgParagraphLength > 120 ? 2 : 0)));
+  const seoScore = Math.min(99, Math.max(72, 76 + (title ? 8 : 0) + (hasMeta ? 7 : 0) + (municipality ? 3 : 0) + (tags ? 3 : 0)));
+  const originalityScore = Math.min(99, Math.max(60, 81 + (hasSources ? 4 : 0) + (excerpt ? 2 : 0) - Math.max(0, words / 500) * 2));
+  const headlineScore = Math.min(99, Math.max(68, 80 + (title.length >= 45 && title.length <= 90 ? 8 : 0) - (title.length > 100 ? 8 : 0)));
+  const qualityScore = Math.round((grammarScore * 0.25 + readabilityScore * 0.2 + seoScore * 0.2 + originalityScore * 0.2 + headlineScore * 0.15));
+  const aiWritingProbability = Math.min(90, Math.max(8, Math.round((avgSentenceLength > 24 ? 16 : 8) + (words < 250 ? 10 : 0) + (title.length > 80 ? 6 : 0) + (hasQuotes ? -5 : 0) + (hasImage ? -4 : 0))));
+  const humanWritingConfidence = Math.max(10, Math.min(95, 100 - aiWritingProbability));
+  const confidenceLevel = humanWritingConfidence > 80 ? 'high' : humanWritingConfidence > 60 ? 'medium' : 'low';
+  const factCheckStatus = hasSources ? 'verified' : 'needs-verification';
+  const recommendations = [
+    qualityScore >= 90 ? 'Ready for editorial review.' : 'Needs editorial review before publication.',
+    !hasImage ? 'Add a high-resolution featured image.' : '',
+    !hasSources ? 'Add a credible source or quote for verification.' : '',
+    !municipality ? 'Add municipality context to strengthen local relevance.' : '',
+    !tags ? 'Add tags to improve discovery and search performance.' : ''
+  ].filter(Boolean).join(' • ');
+
+  return {
+    quality_score: qualityScore,
+    grammar_score: Math.round(grammarScore),
+    readability_score: Math.round(readabilityScore),
+    seo_score: Math.round(seoScore),
+    originality_score: Math.round(originalityScore),
+    headline_score: Math.round(headlineScore),
+    human_writing_confidence: humanWritingConfidence,
+    ai_writing_probability: aiWritingProbability,
+    confidence_level: confidenceLevel,
+    fact_check_status: factCheckStatus,
+    sources_count: hasSources ? 1 : 0,
+    quotes_count: hasQuotes ? 1 : 0,
+    images_count: hasImage ? 1 : 0,
+    reading_time: estimateReadingTime(content),
+    recommendations,
+    notes: ''
   };
 }
 
@@ -1390,6 +1790,132 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
     await db.run(`UPDATE stories SET ${assignments} WHERE id = ?`, values);
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
     res.json({ story });
+  });
+});
+
+app.get('/api/stories/:id/editorial-analysis', authMiddleware, async (req, res) => {
+  const id = req.params.id;
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'story not found' });
+
+    const analysis = analyzeStoryEditorially(existing);
+    const current = await db.get(`SELECT * FROM editorial_reviews WHERE story_id = ?`, [id]);
+    const now = new Date().toISOString();
+    const values = [
+      id,
+      analysis.quality_score,
+      analysis.grammar_score,
+      analysis.readability_score,
+      analysis.seo_score,
+      analysis.originality_score,
+      analysis.headline_score,
+      analysis.human_writing_confidence,
+      analysis.ai_writing_probability,
+      analysis.confidence_level,
+      analysis.fact_check_status,
+      analysis.sources_count,
+      analysis.quotes_count,
+      analysis.images_count,
+      analysis.reading_time,
+      analysis.recommendations,
+      analysis.notes,
+      now,
+      now,
+    ];
+
+    if (current) {
+      await db.run(`UPDATE editorial_reviews SET
+        quality_score = ?, grammar_score = ?, readability_score = ?, seo_score = ?, originality_score = ?, headline_score = ?,
+        human_writing_confidence = ?, ai_writing_probability = ?, confidence_level = ?, fact_check_status = ?, sources_count = ?,
+        quotes_count = ?, images_count = ?, reading_time = ?, recommendations = ?, notes = ?, updated_at = ?
+        WHERE story_id = ?`, [...values.slice(1, 19), values[19], id]);
+    } else {
+      await db.run(`INSERT INTO editorial_reviews (
+        story_id, quality_score, grammar_score, readability_score, seo_score, originality_score, headline_score,
+        human_writing_confidence, ai_writing_probability, confidence_level, fact_check_status, sources_count,
+        quotes_count, images_count, reading_time, recommendations, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, values);
+    }
+
+    const review = await db.get(`SELECT * FROM editorial_reviews WHERE story_id = ?`, [id]);
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    res.json({
+      story,
+      review: {
+        ...review,
+        disclaimer: 'This score is an estimate and should only assist editorial decision-making. It is not proof that the content was written by artificial intelligence.',
+        recommendations: review?.recommendations || analysis.recommendations,
+      }
+    });
+  });
+});
+
+app.post('/api/stories/:id/editorial-review', authMiddleware, requireRole('admin', 'editor', 'sub-editor', 'managing-editor', 'journalist'), async (req, res) => {
+  const id = req.params.id;
+  const action = String(req.body?.action || 'approve').trim().toLowerCase();
+  const notes = String(req.body?.notes || '').trim();
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'story not found' });
+
+    const statusMap = {
+      approve: 'approved',
+      'request-changes': 'needs-changes',
+      reject: 'rejected',
+      publish: 'published',
+      schedule: 'scheduled',
+      'pending-review': 'pending-review',
+      'fact-check': 'fact-check',
+    };
+    const nextStatus = statusMap[action] || 'approved';
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [nextStatus, notes || existing.editorial_notes || '', updatedAt, id]);
+
+    const review = await db.get(`SELECT * FROM editorial_reviews WHERE story_id = ?`, [id]);
+    if (review) {
+      await db.run(`UPDATE editorial_reviews SET notes = ?, updated_at = ? WHERE story_id = ?`, [notes || review.notes || '', updatedAt, id]);
+    }
+    await db.run(`INSERT INTO revision_history (story_id, action, notes, created_at) VALUES (?, ?, ?, ?)`, [id, action, notes, updatedAt]);
+
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    res.json({
+      story,
+      review: {
+        ...(review || {}),
+        action,
+        notes,
+        status: nextStatus,
+        disclaimer: 'This score is an estimate and should only assist editorial decision-making. It is not proof that the content was written by artificial intelligence.',
+      }
+    });
+  });
+});
+
+app.get('/api/editorial/overview', authMiddleware, requireRole('admin', 'editor', 'sub-editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const pendingReview = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status IN ('pending-review', 'fact-check')`);
+    const needsChanges = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'needs-changes'`);
+    const approved = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'approved'`);
+    const published = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'published'`);
+    const rejected = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'rejected'`);
+    const avgQuality = await db.get(`SELECT AVG(quality_score) as average FROM editorial_reviews`);
+    const avgGrammar = await db.get(`SELECT AVG(grammar_score) as average FROM editorial_reviews`);
+    const avgSeo = await db.get(`SELECT AVG(seo_score) as average FROM editorial_reviews`);
+    const topContributor = await db.get(`SELECT u.username, COUNT(s.id) as count FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.status = 'published' GROUP BY u.id ORDER BY count DESC LIMIT 1`);
+    res.json({
+      overview: {
+        pendingReview: Number(pendingReview?.cnt || 0),
+        needsChanges: Number(needsChanges?.cnt || 0),
+        approved: Number(approved?.cnt || 0),
+        published: Number(published?.cnt || 0),
+        rejected: Number(rejected?.cnt || 0),
+        averageQualityScore: Number(avgQuality?.average || 0),
+        averageGrammarScore: Number(avgGrammar?.average || 0),
+        averageSeoScore: Number(avgSeo?.average || 0),
+        topContributor: topContributor?.username || 'No published stories yet'
+      }
+    });
   });
 });
 
@@ -1567,6 +2093,24 @@ app.get('/api/breaking-news', async (req, res) => {
     const fallbackStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.is_breaking = 1 OR s.featured = 0 ORDER BY s.submittedAt DESC LIMIT 8`);
     const stories = fallbackStories.map((story) => ({ ...story, comments: Number(story.comments || 0) }));
     res.json({ stories });
+  });
+});
+
+app.post('/api/corrections', async (req, res) => {
+  const { name, email, articleUrl, issueType, description, supportingDocuments } = req.body || {};
+  if (!name || !email || !description) return res.status(400).json({ error: 'name, email and description are required' });
+  return withDB(async (db) => {
+    const createdAt = new Date().toISOString();
+    const row = await db.run(`INSERT INTO correction_requests (name, email, article_url, issue_type, description, supporting_documents, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?)`, [name, email, articleUrl || '', issueType || '', description, supportingDocuments || '', createdAt, createdAt]);
+    const request = await db.get(`SELECT * FROM correction_requests WHERE id = ?`, [row.lastID]);
+    res.json({ correction: request });
+  });
+});
+
+app.get('/api/corrections', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const requests = await db.all(`SELECT * FROM correction_requests ORDER BY created_at DESC LIMIT 50`);
+    res.json({ corrections: requests });
   });
 });
 

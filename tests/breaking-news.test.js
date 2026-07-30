@@ -160,6 +160,42 @@ test('creatives landing page renders the creative portal experience', async () =
   }
 });
 
+test('creative marketplace landing page highlights the new product categories', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/creative-marketplace`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Creative Marketplace/);
+    assert.match(html, /Digital Products/);
+    assert.match(html, /Made in Mpumalanga/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('creative marketplace listing page renders storefront-style cards and filters', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/creative-marketplace/listings`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Filter by/);
+    assert.match(html, /Digital/);
+    assert.match(html, /Artist storefront/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test('artist booking endpoint stores a booking', async () => {
   await initializeDatabase();
   const server = app.listen(0);
@@ -454,6 +490,58 @@ test('contributor performance endpoint returns editorial metrics', async () => {
     assert.ok(payload.summary);
     assert.ok(Array.isArray(payload.contributors));
     assert.equal(typeof payload.summary.totalContributors, 'number');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('editorial analysis and review endpoints provide advisory workflow data', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'changeme' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const createResponse = await fetch(`http://127.0.0.1:${address.port}/api/stories`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ title: 'Editorial review workflow test', category: 'News', content: 'A local clinic in Mbombela has opened a new service desk for residents who need urgent care and follow-up support after the recent rollout.', status: 'pending-review' }),
+    });
+    assert.equal(createResponse.status, 200);
+    const created = await createResponse.json();
+    const storyId = created.story.id;
+
+    const analysisResponse = await fetch(`http://127.0.0.1:${address.port}/api/stories/${storyId}/editorial-analysis`, {
+      headers: { Authorization: `Bearer ${loginPayload.token}` },
+    });
+    assert.equal(analysisResponse.status, 200);
+    const analysisPayload = await analysisResponse.json();
+    assert.ok(analysisPayload.review);
+    assert.ok(typeof analysisPayload.review.quality_score === 'number');
+    assert.match(analysisPayload.review.recommendations || '', /editorial review/i);
+
+    const reviewResponse = await fetch(`http://127.0.0.1:${address.port}/api/stories/${storyId}/editorial-review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ action: 'request-changes', notes: 'Please add a second source.' }),
+    });
+    assert.equal(reviewResponse.status, 200);
+    const reviewPayload = await reviewResponse.json();
+    assert.equal(reviewPayload.story.status, 'needs-changes');
+    assert.match(reviewPayload.review.notes || '', /second source/i);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
