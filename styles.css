@@ -775,6 +775,7 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
+  margin-left: auto;
 }
 
 .brand-wrap {
@@ -786,7 +787,7 @@ button {
 .site-branding img {
   width: 54px;
   height: 54px;
-  border-radius: 14px;
+  border-radius: 0;
   object-fit: cover;
 }
 
@@ -808,7 +809,7 @@ button {
   border: 1px solid var(--border);
   background: #fff;
   padding: 10px;
-  border-radius: 12px;
+  border-radius: 999px;
 }
 
 .nav-primary {
