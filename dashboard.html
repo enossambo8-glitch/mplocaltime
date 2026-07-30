@@ -3,568 +3,694 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Contributor Dashboard | Mpumalanga Local Time</title>
-  <meta name="description" content="Contributor dashboard for Mpumalanga Local Time, where authors can review stories and comments." />
+  <title>Workspace | Mpumalanga Local Time</title>
+  <meta name="description" content="Modern role-based newsroom workspace for Mpumalanga Local Time." />
   <link rel="canonical" href="https://mplocaltime.co.za/dashboard.html">
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/main.js"></script>
 </head>
-<body>
-  <header class="site-header">
-    <div class="container navbar">
-      <div class="site-branding">
-        <a href="/" aria-label="Mpumalanga Local Time home">
-          <div style="display:flex;align-items:center;gap:12px">
-            <img src="/logo.png" alt="Mpumalanga Local Time logo">
+<body class="dashboard-page">
+  <div class="dashboard-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">
+          <img src="/logo.png" alt="Mpumalanga Local Time logo">
+        </div>
+        <div>
+          <h1>Mpumalanga Local Time</h1>
+          <p>Newsroom Workspace</p>
+        </div>
+      </div>
+      <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar">☰</button>
+      <nav class="sidebar-nav" id="sidebarNav" aria-label="Dashboard navigation"></nav>
+      <div class="sidebar-footer">
+        <button class="sidebar-logout" id="logoutButton" type="button">Logout</button>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <label class="search-pill" for="globalSearch">
+            <span aria-hidden="true">🔎</span>
+            <input id="globalSearch" type="search" placeholder="Search articles, contributors, artists..." />
+          </label>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-chip">🌦️ Mbombela 18°C</div>
+          <div class="topbar-chip">🔔 4</div>
+          <div class="topbar-chip">✉️ 2</div>
+          <button class="topbar-chip" id="themeToggle" type="button" aria-label="Toggle dark mode">🌙</button>
+          <div class="profile-card">
+            <div class="profile-avatar" id="profileAvatar">E</div>
             <div>
-              <strong class="site-title">Mpumalanga Local Time</strong>
-              <span class="site-tagline">Contributor dashboard</span>
+              <strong id="profileName">Enos</strong>
+              <p id="profileRole">Contributor</p>
             </div>
           </div>
-        </a>
-      </div>
-      <button class="nav-toggle" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
-      <nav class="nav-primary" id="primary-navigation" aria-label="Primary navigation">
-        <a href="/">Home</a>
-        <a href="/news.html">News</a>
-        <a href="/business.html">Business</a>
-        <a href="/creatives">Creatives</a>
-        <a href="/arts.html">Arts</a>
-        <a href="/sports.html">Sports</a>
-        <a href="/community.html">Community</a>
-      </nav>
+        </div>
+      </header>
+
+      <section class="hero-banner">
+        <div>
+          <p class="eyebrow" id="greetingLabel">Good morning</p>
+          <h2 id="welcomeLine">Hello Enos, welcome back to the newsroom.</h2>
+          <p id="welcomeSubline">Welcome back to Mpumalanga Local Time.</p>
+          <div class="banner-pill" id="bannerStatus">You have 4 articles awaiting review.</div>
+        </div>
+        <div class="hero-actions">
+          <button class="button primary" data-view="write-story" type="button">Write new story</button>
+          <button class="button secondary" data-view="analytics" type="button">View analytics</button>
+        </div>
+      </section>
+
+      <main id="workspaceContent" class="workspace-content"></main>
     </div>
-  </header>
-
-  <main class="container" style="padding: 40px 0;">
-    <section class="card">
-      <div class="card-content">
-        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;">
-          <div>
-            <h1 class="section-title">Contributor Dashboard</h1>
-            <p class="section-subtitle">Monitor your submissions, update workflow states, and keep your newsroom work moving.</p>
-            <div id="welcome" class="meta"></div>
-            <div id="profileStats" class="meta" style="margin-top:12px;"></div>
-          </div>
-          <div>
-            <button id="logoutButton" class="btn secondary">Logout</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Create story</h2>
-        <form id="storyForm" style="display:grid;gap:16px;">
-          <label>
-            <span>Title</span>
-            <input id="storyTitle" name="title" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Category</span>
-            <input id="storyCategory" name="category" type="text" placeholder="News, Business, Arts, Sports" value="News" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Content</span>
-            <textarea id="storyContent" name="content" rows="8" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;resize:vertical;"></textarea>
-          </label>
-          <label>
-            <span>Status</span>
-            <input name="status" type="text" placeholder="draft" value="draft" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <button class="btn primary" type="submit">Publish story</button>
-            <span id="createStoryMessage" style="color:#a00;"></span>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Search newsroom</h2>
-        <input id="searchInput" placeholder="Search stories" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-        <div id="searchResults" style="margin-top:14px;"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Send notification</h2>
-        <form id="notificationForm" style="display:grid;gap:14px;">
-          <label>
-            <span>Title</span>
-            <input name="title" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Body</span>
-            <textarea name="body" rows="4" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;resize:vertical;"></textarea>
-          </label>
-          <label>
-            <span>Category</span>
-            <input name="category" type="text" placeholder="Community" value="Community" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Province</span>
-            <input name="province" type="text" placeholder="Mpumalanga" value="Mpumalanga" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <button class="btn primary" type="submit">Send notification</button>
-            <span id="notificationMessage" style="color:#a00;"></span>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Recent notifications</h2>
-        <div id="notificationList">
-          <p>Loading notifications…</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Contributor performance</h2>
-        <div id="contributorPerformance" style="display:grid; gap:12px;"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Your stories</h2>
-        <div id="storyArea">
-          <p>Loading stories…</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Creatives overview</h2>
-        <div id="creativeOverview" style="display:grid; gap:12px;"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Analytics snapshot</h2>
-        <div id="analyticsArea">
-          <p>Loading analytics…</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Editor analytics dashboard</h2>
-        <div id="editorAnalytics" style="display:grid; gap:14px;"></div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="footer" role="contentinfo">
-    <div class="container">
-      <div class="footer-grid">
-        <div>
-          <h4>Resources</h4>
-          <ul>
-            <li><a href="/about.html">About</a></li>
-            <li><a href="/privacy-policy.html">Privacy Policy</a></li>
-            <li><a href="/terms-and-conditions.html">Terms</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Sections</h4>
-          <ul>
-            <li><a href="/news.html">News</a></li>
-            <li><a href="/business.html">Business</a></li>
-            <li><a href="/arts.html">Arts</a></li>
-            <li><a href="/sports.html">Sports</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Support</h4>
-          <ul>
-            <li><a href="/privacy-statement.html">Privacy Statement</a></li>
-            <li><a href="/accessibility.html">Accessibility</a></li>
-            <li><a href="/rss.xml">RSS Feed</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Connect</h4>
-          <ul>
-            <li><a href="https://www.facebook.com/Mpumalangalocaltime" target="_blank" rel="noopener">Facebook</a></li>
-            <li><a href="https://x.com/mplocaltime1" target="_blank" rel="noopener">X</a></li>
-            <li><a href="https://www.instagram.com/mpumalanga_local_time/" target="_blank" rel="noopener">Instagram</a></li>
-          </ul>
-        </div>
-      </div>
-      <div class="footer-legal">
-        <div>
-          <strong>© 2025 Mpumalanga Local Time</strong>
-          <div class="meta-small">Trusted news for Mpumalanga communities.</div>
-        </div>
-        <div class="social-links">
-          <a href="/privacy-policy.html">Privacy</a>
-          <a href="/terms-and-conditions.html">Terms</a>
-          <a href="/accessibility.html">Accessibility</a>
-        </div>
-      </div>
-    </div>
-  </footer>
+  </div>
 
   <script>
-    const user = localStorage.getItem('currentUser') || 'Guest';
-    const token = localStorage.getItem('token') || '';
-    const role = localStorage.getItem('currentRole') || 'user';
-    const welcome = document.getElementById('welcome');
-    const profileStats = document.getElementById('profileStats');
-    const storyArea = document.getElementById('storyArea');
-    const analyticsArea = document.getElementById('analyticsArea');
-    const searchInput = document.getElementById('searchInput');
-    const searchResults = document.getElementById('searchResults');
-    const storyForm = document.getElementById('storyForm');
-    const createStoryMessage = document.getElementById('createStoryMessage');
-    const notificationForm = document.getElementById('notificationForm');
-    const notificationMessage = document.getElementById('notificationMessage');
-    const notificationList = document.getElementById('notificationList');
-    const contributorPerformance = document.getElementById('contributorPerformance');
-    const creativeOverview = document.getElementById('creativeOverview');
-    const logoutButton = document.getElementById('logoutButton');
-    const editorAnalytics = document.getElementById('editorAnalytics');
+    (() => {
+      const user = localStorage.getItem('currentUser') || 'Guest';
+      const token = localStorage.getItem('token') || '';
+      const role = (localStorage.getItem('currentRole') || 'contributor').toLowerCase();
+      const workspace = document.getElementById('workspaceContent');
+      const sidebarNav = document.getElementById('sidebarNav');
+      const sidebarToggle = document.getElementById('sidebarToggle');
+      const globalSearch = document.getElementById('globalSearch');
+      const themeToggle = document.getElementById('themeToggle');
+      const profileName = document.getElementById('profileName');
+      const profileRole = document.getElementById('profileRole');
+      const profileAvatar = document.getElementById('profileAvatar');
+      const greetingLabel = document.getElementById('greetingLabel');
+      const welcomeLine = document.getElementById('welcomeLine');
+      const welcomeSubline = document.getElementById('welcomeSubline');
+      const bannerStatus = document.getElementById('bannerStatus');
+      const logoutButton = document.getElementById('logoutButton');
+      const state = { activeView: 'dashboard' };
 
-    function showNotLoggedIn() {
-      welcome.textContent = 'Not logged in';
-      profileStats.innerHTML = '';
-      storyArea.innerHTML = '<p>Please log in through <a href="/login.html">login</a> to view and manage your stories.</p>';
-      searchResults.innerHTML = '<p>Sign in to search the newsroom.</p>';
-      storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = true;
-      });
-      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = true;
-      });
-    }
+      const roleNavMap = {
+        contributor: [
+          { id: 'dashboard', label: 'Workspace', icon: '🏠' },
+          { id: 'write-story', label: 'Write Story', icon: '✍️' },
+          { id: 'drafts', label: 'My Drafts', icon: '📝' },
+          { id: 'submitted', label: 'Submitted', icon: '📤' },
+          { id: 'published', label: 'Published', icon: '📰' },
+          { id: 'analytics', label: 'Analytics', icon: '📊' },
+          { id: 'comments', label: 'Comments', icon: '💬' },
+          { id: 'notifications', label: 'Notifications', icon: '🔔' },
+          { id: 'settings', label: 'Settings', icon: '⚙️' },
+        ],
+        editor: [
+          { id: 'dashboard', label: 'Workspace', icon: '🏠' },
+          { id: 'review', label: 'Pending Review', icon: '✅' },
+          { id: 'approve', label: 'Approve Articles', icon: '🛡️' },
+          { id: 'featured', label: 'Feature Stories', icon: '⭐' },
+          { id: 'scheduled', label: 'Scheduled', icon: '📅' },
+          { id: 'contributors', label: 'Contributors', icon: '👥' },
+          { id: 'comments', label: 'Comments', icon: '💬' },
+          { id: 'categories', label: 'Categories', icon: '🗂️' },
+          { id: 'analytics', label: 'Analytics', icon: '📊' },
+          { id: 'settings', label: 'Settings', icon: '⚙️' },
+        ],
+        superadmin: [
+          { id: 'dashboard', label: 'Workspace', icon: '🏠' },
+          { id: 'newsroom', label: 'Newsroom', icon: '📰' },
+          { id: 'write-story', label: 'Write Story', icon: '✍️' },
+          { id: 'drafts', label: 'Drafts', icon: '🗂️' },
+          { id: 'submitted', label: 'Submitted', icon: '📤' },
+          { id: 'published', label: 'Published', icon: '✅' },
+          { id: 'scheduled', label: 'Scheduled', icon: '📅' },
+          { id: 'analytics', label: 'Analytics', icon: '📊' },
+          { id: 'comments', label: 'Comments', icon: '💬' },
+          { id: 'notifications', label: 'Notifications', icon: '🔔' },
+          { id: 'media', label: 'Media Library', icon: '🖼️' },
+          { id: 'categories', label: 'Categories', icon: '🗂️' },
+          { id: 'municipalities', label: 'Municipalities', icon: '🏛️' },
+          { id: 'events', label: 'Events', icon: '🎉' },
+          { id: 'creatives', label: 'Creatives', icon: '🎨' },
+          { id: 'marketplace', label: 'Marketplace', icon: '🛒' },
+          { id: 'business', label: 'Business', icon: '💼' },
+          { id: 'jobs', label: 'Jobs', icon: '💼' },
+          { id: 'newsletter', label: 'Newsletter', icon: '📬' },
+          { id: 'ads', label: 'Ads', icon: '📣' },
+          { id: 'settings', label: 'Settings', icon: '⚙️' },
+          { id: 'help', label: 'Help Centre', icon: '❓' },
+        ],
+        artist: [
+          { id: 'dashboard', label: 'Workspace', icon: '🏠' },
+          { id: 'portfolio', label: 'Portfolio', icon: '🎨' },
+          { id: 'bookings', label: 'Bookings', icon: '📅' },
+          { id: 'marketplace', label: 'Marketplace', icon: '🛒' },
+          { id: 'events', label: 'Events', icon: '🎉' },
+          { id: 'orders', label: 'Orders', icon: '🧾' },
+          { id: 'analytics', label: 'Analytics', icon: '📊' },
+          { id: 'settings', label: 'Profile', icon: '👤' },
+        ],
+        business: [
+          { id: 'dashboard', label: 'Workspace', icon: '🏠' },
+          { id: 'profile', label: 'Business Profile', icon: '🏢' },
+          { id: 'ads', label: 'Advertisements', icon: '📣' },
+          { id: 'leads', label: 'Leads', icon: '🤝' },
+          { id: 'analytics', label: 'Analytics', icon: '📊' },
+          { id: 'settings', label: 'Settings', icon: '⚙️' },
+        ],
+      };
 
-    function handleLogout() {
-      localStorage.removeItem('token');
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('currentRole');
-      window.location.href = '/login.html';
-    }
+      const roleLabelMap = {
+        contributor: 'Contributor',
+        editor: 'Editor',
+        superadmin: 'Super Admin',
+        artist: 'Artist',
+        business: 'Business',
+      };
 
-    if (!token || !user || user === 'Guest') {
-      showNotLoggedIn();
-    } else {
-      welcome.innerHTML = `Logged in as <strong>${user}</strong> (${role})`;
-      logoutButton?.addEventListener('click', handleLogout);
-      storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = false;
-      });
-      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = false;
-      });
+      const statCards = {
+        contributor: [
+          { label: 'Articles published', value: '24', detail: '+6 this month' },
+          { label: 'Drafts in progress', value: '8', detail: '2 ready for review' },
+          { label: 'Pending reviews', value: '4', detail: '1 overdue' },
+          { label: 'Comments received', value: '32', detail: '18 unread' },
+        ],
+        editor: [
+          { label: 'Stories waiting', value: '11', detail: '2 high priority' },
+          { label: 'Approved today', value: '7', detail: 'Fast turnaround' },
+          { label: 'Featured stories', value: '3', detail: 'Scheduled for tomorrow' },
+          { label: 'Reader engagement', value: '84%', detail: 'up 12% week-over-week' },
+        ],
+        superadmin: [
+          { label: 'Live stories', value: '182', detail: 'Across 7 categories' },
+          { label: 'Pending review', value: '14', detail: 'Mixed by team' },
+          { label: 'Newsletter subs', value: '4.2k', detail: 'Healthy growth' },
+          { label: 'Marketplace orders', value: '29', detail: 'This week' },
+        ],
+        artist: [
+          { label: 'Portfolio items', value: '18', detail: 'Updated this week' },
+          { label: 'Bookings', value: '6', detail: '2 confirmed' },
+          { label: 'Orders', value: '9', detail: 'Ready for fulfilment' },
+          { label: 'Followers', value: '1.2k', detail: 'Growing steadily' },
+        ],
+        business: [
+          { label: 'Active ads', value: '5', detail: '2 under review' },
+          { label: 'Leads received', value: '38', detail: 'High intent' },
+          { label: 'Revenue pulse', value: 'R18k', detail: 'Month to date' },
+          { label: 'Engagement', value: '73%', detail: 'Above target' },
+        ],
+      };
 
-      async function loadProfile() {
-        if (!token) {
-          profileStats.innerHTML = '<p>Please log in to view profile stats.</p>';
-          return;
-        }
-        try {
-          const resp = await fetch('/api/users/me', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await resp.json();
-          if (!resp.ok) {
-            profileStats.innerHTML = `<p>${data.error || 'Unable to load profile.'}</p>`;
-            return;
-          }
-          const userData = data.user || {};
-          profileStats.innerHTML = `<strong>${userData.username}</strong> • ${userData.role || 'user'} • ${userData.storyCount || 0} stories • ${userData.totalViews || 0} total views`;
-        } catch (err) {
-          profileStats.innerHTML = '<p>Unable to load profile right now.</p>';
-        }
-      }
+      const activityItems = [
+        { title: 'Article approved and published', detail: 'Editor approved “Youth festival gains momentum”', time: 'Today • 09:16' },
+        { title: 'New follower on the newsroom profile', detail: 'A local business joined the community channel', time: 'Today • 08:35' },
+        { title: 'Booking request received', detail: 'A creative requested a feature slot this week', time: 'Yesterday • 17:20' },
+        { title: 'Comment thread resolved', detail: 'Editorial feedback was shared with the contributor', time: 'Yesterday • 15:40' },
+      ];
 
-      async function loadCreativeOverview() {
-        if (!creativeOverview) return;
-        creativeOverview.innerHTML = '<p>Loading creative directory…</p>';
-        try {
-          const response = await fetch('/api/creatives/overview');
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to load creative overview');
-          const overview = data.overview || {};
-          creativeOverview.innerHTML = `
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
-              <div class="card" style="padding:14px;"><strong>${overview.organisations || 0}</strong><div>organisations</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.venues || 0}</strong><div>venues</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.events || 0}</strong><div>events</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.opportunities || 0}</strong><div>opportunities</div></div>
-            </div>
-            <div style="display:grid;gap:10px;margin-top:8px;">
-              ${(data.organisations || []).map((item) => `<div class="card" style="padding:14px;"><strong>${item.name || item.title}</strong><div class="meta">${item.category || 'Creative'} • ${item.municipality || 'Mpumalanga'}</div></div>`).join('')}
-              ${(data.venues || []).map((item) => `<div class="card" style="padding:14px;"><strong>${item.name || item.title}</strong><div class="meta">${item.category || 'Venue'} • ${item.city || item.municipality || 'Mpumalanga'}</div></div>`).join('')}
-            </div>`;
-        } catch (error) {
-          creativeOverview.innerHTML = `<p>${error.message}</p>`;
-        }
-      }
+      const calendarItems = [
+        { title: 'Editorial planning', detail: '09:00 • Newsroom sync' },
+        { title: 'Publication deadline', detail: '12:00 • Regional business story' },
+        { title: 'Marketplace review', detail: '16:00 • Vendor approvals' },
+      ];
 
-      async function loadAnalytics() {
-        try {
-          const response = await fetch('/api/analytics/overview', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Unable to load analytics.');
-          }
-          const overview = data.overview || {};
-          const analytics = data.analytics || {};
-          const editorHtml = `
-            <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px, 1fr));">
-              <div class="card" style="padding:14px;"><strong>Today visitors</strong><div>${analytics.todayVisitors || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Page views</strong><div>${analytics.pageViews || overview.viewCount || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Articles published</strong><div>${analytics.articlesPublished || overview.publishedCount || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Newsletter subs</strong><div>${analytics.newsletterSubscribers || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Push subscribers</strong><div>${analytics.pushNotificationSubscribers || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Most read</strong><div>${analytics.mostReadArticle || overview.topStories?.[0]?.title || '—'}</div></div>
-            </div>
-            <div class="card" style="padding:14px;">
-              <strong>Performance highlights</strong>
-              <ul>
-                <li>Top reporter: ${analytics.topReporter || '—'}</li>
-                <li>Top municipality: ${analytics.topMunicipality || '—'}</li>
-                <li>Popular category: ${analytics.popularCategories?.[0]?.category || '—'}</li>
-                <li>Bounce rate: ${analytics.bounceRate || '—'}</li>
-              </ul>
-            </div>`;
-          const overviewHtml = `
-            <p><strong>${overview.storyCount || 0}</strong> total stories</p>
-            <p><strong>${overview.publishedCount || analytics.articlesPublished || 0}</strong> published</p>
-            <p><strong>${overview.draftCount || 0}</strong> drafts</p>
-            <p><strong>${overview.commentCount || 0}</strong> comments</p>
-            <p><strong>${overview.viewCount || analytics.pageViews || 0}</strong> total views</p>
-            <ul>${(overview.topStories || []).map((story) => `<li>${story.title} — ${story.views || 0} views</li>`).join('')}</ul>`;
+      const searchIndex = [
+        'Mpumalanga business growth corridor',
+        'Local arts festival and bookings',
+        'Community event calendar',
+        'Newsletter subscribers',
+        'Featured contributor profiles',
+        'Marketplace orders and advertisers',
+      ];
 
-          if (editorAnalytics) {
-            editorAnalytics.innerHTML = editorHtml;
-          }
-          if (analyticsArea) {
-            analyticsArea.innerHTML = overviewHtml;
-          }
-        } catch (error) {
-          if (editorAnalytics) {
-            editorAnalytics.innerHTML = '<p>Analytics unavailable right now.</p>';
-          }
-          if (analyticsArea) {
-            analyticsArea.innerHTML = '<p>Analytics are unavailable right now.</p>';
-          }
-        }
-      }
+      const escapeHtml = (value = '') => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 
-      async function loadNotifications() {
-        if (!notificationList) return;
-        notificationList.innerHTML = '<p>Loading notifications…</p>';
-        try {
-          const response = await fetch('/api/admin/notifications', {
-            headers: { Authorization: 'Bearer ' + token },
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to load notifications');
-          const notifications = data.notifications || [];
-          if (!notifications.length) {
-            notificationList.innerHTML = '<p>No notifications queued yet.</p>';
-            return;
-          }
-          notificationList.innerHTML = notifications.map((item) => `
-            <div class="card" style="margin-bottom:12px;padding:14px;">
-              <strong>${item.title || 'Untitled notification'}</strong>
-              <p style="margin:8px 0;">${item.body || '—'}</p>
-              <div class="meta">${item.category || 'General'} • ${item.province || 'All'} • ${new Date(item.sent_at || item.created_at || Date.now()).toLocaleString('en-ZA')}</div>
-            </div>
-          `).join('');
-        } catch (error) {
-          notificationList.innerHTML = `<p>${error.message}</p>`;
-        }
-      }
+      const getGreeting = () => {
+        const hour = new Date().getHours();
+        if (hour < 12) return 'Good morning';
+        if (hour < 18) return 'Good afternoon';
+        return 'Good evening';
+      };
 
-      notificationForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (!token) {
-          notificationMessage.textContent = 'Please sign in first.';
-          return;
-        }
-        const formData = new FormData(notificationForm);
-        const payload = {
-          title: formData.get('title'),
-          body: formData.get('body'),
-          category: formData.get('category') || 'Community',
-          province: formData.get('province') || 'Mpumalanga',
-        };
-        try {
-          const response = await fetch('/api/admin/notifications', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to send notification');
-          notificationMessage.textContent = `Sent ${data.notification?.title || 'notification'} successfully.`;
-          notificationForm.reset();
-          loadNotifications();
-        } catch (error) {
-          notificationMessage.textContent = error.message;
-        }
-      });
+      const getRoleLabel = () => roleLabelMap[role] || 'Contributor';
 
-      async function loadContributorPerformance() {
-        if (!contributorPerformance) return;
-        contributorPerformance.innerHTML = '<p>Loading contributor metrics…</p>';
-        try {
-          const response = await fetch('/api/contributors/performance', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to load contributor metrics');
-          const summary = data.summary || {};
-          const contributors = data.contributors || [];
-          contributorPerformance.innerHTML = `
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
-              <div class="card" style="padding:14px;"><strong>${summary.totalContributors || 0}</strong><div>contributors</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.totalPublishedArticles || 0}</strong><div>articles published</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.totalViews || 0}</strong><div>total views</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.topContributor?.username || '—'}</strong><div>top contributor</div></div>
-            </div>
-            <div style="display:grid;gap:10px;margin-top:8px;">
-              ${contributors.map((person) => `
-                <div class="card" style="padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-                  <div>
-                    <strong>${person.username || 'Contributor'}</strong>
-                    <div class="meta">${person.role || 'contributor'} • ${person.articlesPublished || 0} published • ${person.totalViews || 0} views</div>
-                  </div>
-                  <div class="meta">${person.bio || 'Active newsroom contributor'}</div>
-                </div>
-              `).join('')}
-            </div>`;
-        } catch (error) {
-          contributorPerformance.innerHTML = `<p>${error.message}</p>`;
-        }
-      }
+      const getNavItems = () => roleNavMap[role] || roleNavMap.contributor;
 
-      async function loadStories() {
-        if (!storyArea) return;
-        storyArea.innerHTML = '<p>Loading stories…</p>';
-        try {
-          const response = await fetch(`/api/stories?author=${encodeURIComponent(user)}`, {
-            headers: { Authorization: 'Bearer ' + token },
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            if (response.status === 401) {
-              handleLogout();
-              return;
-            }
-            storyArea.innerHTML = `<p>${data.error || 'Unable to load stories.'}</p>`;
-            return;
-          }
-          const stories = data.stories || [];
-          if (!stories.length) {
-            storyArea.innerHTML = '<p>No stories found yet.</p>';
-            return;
-          }
-          storyArea.innerHTML = stories.map((story) => `
-            <div class="card" style="margin-bottom:18px;">
-              <div class="card-content">
-                <h3>${story.title}</h3>
-                <p>${story.category || 'News'} • ${new Date(story.submittedAt).toLocaleDateString('en-ZA')} • ${story.views || 0} views • ${story.status || 'draft'}</p>
-                <p>${String(story.content || '').slice(0, 180)}${String(story.content || '').length > 180 ? '...' : ''}</p>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-                  <button class="btn primary" type="button" data-update="pending-review" data-id="${story.id}">Send to review</button>
-                  <button class="btn" type="button" data-update="published" data-id="${story.id}">Publish</button>
-                </div>
+      const renderNav = () => {
+        sidebarNav.innerHTML = getNavItems().map((item) => `
+          <button class="nav-item${state.activeView === item.id ? ' active' : ''}" type="button" data-view="${item.id}">
+            <span>${item.icon}</span>
+            <span>${item.label}</span>
+          </button>
+        `).join('');
+      };
+
+      const setGreeting = () => {
+        const greeting = getGreeting();
+        const today = new Date();
+        const formatted = today.toLocaleDateString('en-ZA', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+        greetingLabel.textContent = greeting;
+        welcomeLine.textContent = `Hello ${user}, welcome back to the newsroom.`;
+        welcomeSubline.textContent = `Today is ${formatted}.`;
+        bannerStatus.textContent = role === 'editor'
+          ? 'You have 4 stories awaiting review.'
+          : role === 'business'
+            ? 'You have 2 campaigns ready for launch.'
+            : role === 'artist'
+              ? 'You have 3 bookings to confirm.'
+              : 'You have 4 articles waiting for the next milestone.';
+      };
+
+      const renderDashboard = () => `
+        <section class="stats-grid">
+          ${statCards[role] ? statCards[role].map((card) => `
+            <article class="stat-card">
+              <p>${escapeHtml(card.label)}</p>
+              <h3>${escapeHtml(card.value)}</h3>
+              <span>${escapeHtml(card.detail)}</span>
+            </article>
+          `).join('') : ''}
+        </section>
+
+        <section class="content-grid">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Quick actions</p>
+                <h3>Move fast from insight to publishing</h3>
               </div>
             </div>
-          `).join('');
-          storyArea.querySelectorAll('[data-update]').forEach((button) => {
-            button.addEventListener('click', async () => {
-              const id = button.getAttribute('data-id');
-              const status = button.getAttribute('data-update');
-              try {
-                const response = await fetch(`/api/stories/${id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                  body: JSON.stringify({ status, editorial_notes: `Updated from dashboard ${new Date().toISOString()}` }),
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.error || 'Update failed');
-                createStoryMessage.textContent = `Updated ${payload.story?.title || 'story'} to ${status}`;
-                loadStories();
-              } catch (error) {
-                createStoryMessage.textContent = error.message;
-              }
-            });
-          });
-        } catch (error) {
-          storyArea.innerHTML = '<p>Failed to load stories. Please try again later.</p>';
-        }
-      }
+            <div class="action-grid">
+              <button class="button primary" data-view="write-story" type="button">Write new story</button>
+              <button class="button secondary" data-view="analytics" type="button">View analytics</button>
+              <button class="button secondary" data-view="notifications" type="button">Review notices</button>
+              <button class="button secondary" data-view="comments" type="button">Manage comments</button>
+            </div>
+          </div>
 
-      async function searchStories(query) {
-        if (!query) {
-          searchResults.innerHTML = '<p>Start typing to search the newsroom.</p>';
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Recent activity</p>
+                <h3>Latest newsroom momentum</h3>
+              </div>
+            </div>
+            <div class="activity-list">
+              ${activityItems.map((item) => `
+                <article class="activity-item">
+                  <strong>${escapeHtml(item.title)}</strong>
+                  <p>${escapeHtml(item.detail)}</p>
+                  <span>${escapeHtml(item.time)}</span>
+                </article>
+              `).join('')}
+            </div>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <div class="panel chart-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Engagement</p>
+                <h3>Weekly readership trend</h3>
+              </div>
+            </div>
+            <svg class="chart" viewBox="0 0 320 140" role="img" aria-label="Weekly readership trend chart">
+              <path d="M8 104 C 42 86, 70 78, 94 82 S 146 96, 170 76 S 222 44, 248 56 S 288 88, 312 32" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"></path>
+              <path d="M8 104 C 42 86, 70 78, 94 82 S 146 96, 170 76 S 222 44, 248 56 S 288 88, 312 32 L312 132 L8 132 Z" fill="url(#chartFill)"></path>
+              <line x1="8" y1="132" x2="312" y2="132" stroke="rgba(148,163,184,0.3)" stroke-width="1"></line>
+              <circle cx="94" cy="82" r="5" fill="#fff" stroke="var(--accent)" stroke-width="3"></circle>
+              <circle cx="170" cy="76" r="5" fill="#fff" stroke="var(--accent)" stroke-width="3"></circle>
+              <circle cx="248" cy="56" r="5" fill="#fff" stroke="var(--accent)" stroke-width="3"></circle>
+              <defs>
+                <linearGradient id="chartFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="rgba(200,16,46,0.38)"></stop>
+                  <stop offset="100%" stop-color="rgba(200,16,46,0.04)"></stop>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="chart-labels">
+              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Notifications</p>
+                <h3>Editor feedback and approvals</h3>
+              </div>
+            </div>
+            <div class="activity-list">
+              <article class="activity-item">
+                <strong>Story approved</strong>
+                <p>Your latest piece was cleared for publication.</p>
+                <span>10 mins ago</span>
+              </article>
+              <article class="activity-item">
+                <strong>Comment reply</strong>
+                <p>A reader asked for a correction and the response is queued.</p>
+                <span>1 hour ago</span>
+              </article>
+            </div>
+          </div>
+        </section>
+      `;
+
+      const renderWriteStory = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Compose</p>
+              <h3>Write a new story</h3>
+            </div>
+          </div>
+          <form class="composer-grid">
+            <label>
+              <span>Headline</span>
+              <input type="text" value="Community keeps the lights on during load shedding" />
+            </label>
+            <label>
+              <span>Category</span>
+              <select>
+                <option>Community</option>
+                <option>Business</option>
+                <option>Arts</option>
+                <option>Sports</option>
+              </select>
+            </label>
+            <label>
+              <span>Summary</span>
+              <textarea rows="4">Residents and local leaders are building stronger support systems while the province continues to adjust to changing service delivery needs.</textarea>
+            </label>
+            <label>
+              <span>Editorial notes</span>
+              <textarea rows="5">Include verified quotes, clear attribution and a strong headline that speaks to the community.</textarea>
+            </label>
+            <div class="action-row">
+              <button class="button primary" type="button">Save draft</button>
+              <button class="button secondary" type="button">Submit for review</button>
+            </div>
+          </form>
+        </section>
+      `;
+
+      const renderDrafts = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Drafts</p>
+              <h3>Work in progress</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item">
+              <strong>Municipality budget hearing recap</strong>
+              <p>Last edited 32 minutes ago</p>
+              <span>Draft</span>
+            </article>
+            <article class="activity-item">
+              <strong>Arts and culture calendar preview</strong>
+              <p>Last edited 1 hour ago</p>
+              <span>Draft</span>
+            </article>
+            <article class="activity-item">
+              <strong>Lowveld transport update</strong>
+              <p>Last edited 2 hours ago</p>
+              <span>Draft</span>
+            </article>
+          </div>
+        </section>
+      `;
+
+      const renderSubmitted = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Workflow</p>
+              <h3>Submitted stories</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item">
+              <strong>Business corridor investment update</strong>
+              <p>Awaiting editor feedback</p>
+              <span>Submitted • 14:20</span>
+            </article>
+            <article class="activity-item">
+              <strong>Community food relief profile</strong>
+              <p>Needs fact check</p>
+              <span>Submitted • 10:05</span>
+            </article>
+          </div>
+        </section>
+      `;
+
+      const renderPublished = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Publishing</p>
+              <h3>Recently published</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item">
+              <strong>New business opportunities on the horizon</strong>
+              <p>Published this morning</p>
+              <span>1.4k views</span>
+            </article>
+            <article class="activity-item">
+              <strong>Local creatives feature across the province</strong>
+              <p>Published yesterday</p>
+              <span>986 views</span>
+            </article>
+          </div>
+        </section>
+      `;
+
+      const renderAnalytics = () => `
+        <section class="stats-grid">
+          <article class="stat-card"><p>Daily views</p><h3>12.4k</h3><span>+14% vs yesterday</span></article>
+          <article class="stat-card"><p>Weekly views</p><h3>68.2k</h3><span>Best performing week so far</span></article>
+          <article class="stat-card"><p>Average reading time</p><h3>4m 22s</h3><span>Readers stay engaged</span></article>
+          <article class="stat-card"><p>Top municipality</p><h3>Mbombela</h3><span>Highest traffic share</span></article>
+        </section>
+        <section class="content-grid">
+          <div class="panel chart-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Traffic sources</p>
+                <h3>Audience mix</h3>
+              </div>
+            </div>
+            <div class="donut-chart" aria-label="Audience mix chart">
+              <div class="donut-center">
+                <strong>68%</strong>
+                <span>Direct</span>
+              </div>
+            </div>
+            <div class="chart-labels">
+              <span>Direct 68%</span><span>Social 22%</span><span>Search 10%</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Most popular</p>
+                <h3>Top articles this week</h3>
+              </div>
+            </div>
+            <div class="activity-list">
+              <article class="activity-item"><strong>Mpumalanga school sport resurgence</strong><p>3.1k views</p><span>Most shared</span></article>
+              <article class="activity-item"><strong>Business growth corridor gains momentum</strong><p>2.7k views</p><span>Strong local interest</span></article>
+            </div>
+          </div>
+        </section>
+      `;
+
+      const renderComments = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Community</p>
+              <h3>Comment moderation</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item"><strong>Reader comment</strong><p>“Can you include more detail on the road repairs?”</p><span>Needs response</span></article>
+            <article class="activity-item"><strong>Editor note</strong><p>Reply prepared for the business update story.</p><span>Approved</span></article>
+          </div>
+        </section>
+      `;
+
+      const renderNotifications = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Inbox</p>
+              <h3>Notifications</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item"><strong>Story approved</strong><p>Your latest piece passed editorial review.</p><span>Today</span></article>
+            <article class="activity-item"><strong>Comment reply</strong><p>A new response is waiting for your review.</p><span>Today</span></article>
+            <article class="activity-item"><strong>Booking request</strong><p>An artist requested a feature session for next week.</p><span>Yesterday</span></article>
+          </div>
+        </section>
+      `;
+
+      const renderSettings = () => `
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Preferences</p>
+              <h3>Workspace settings</h3>
+            </div>
+          </div>
+          <div class="activity-list">
+            <article class="activity-item"><strong>Notification preferences</strong><p>Daily summaries and editorial alerts.</p><span>Enabled</span></article>
+            <article class="activity-item"><strong>Appearance</strong><p>Dark mode is available for evening sessions.</p><span>Default</span></article>
+            <article class="activity-item"><strong>Team access</strong><p>Role-based permissions are active for this workspace.</p><span>Configured</span></article>
+          </div>
+        </section>
+      `;
+
+      const renderSearchResults = (query) => {
+        const matching = searchIndex.filter((entry) => entry.toLowerCase().includes(query.toLowerCase()));
+        workspace.innerHTML = `
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Global search</p>
+                <h3>Results for “${escapeHtml(query)}”</h3>
+              </div>
+            </div>
+            <div class="activity-list">
+              ${matching.length ? matching.map((entry) => `
+                <article class="activity-item">
+                  <strong>${escapeHtml(entry)}</strong>
+                  <p>Matched in the workspace index</p>
+                  <span>Search ready</span>
+                </article>
+              `).join('') : '<p class="empty-state">No matches yet. Try another phrase.</p>'}
+            </div>
+          </section>
+        `;
+      };
+
+      const renderView = (view) => {
+        state.activeView = view;
+        renderNav();
+        if (view === 'dashboard') {
+          workspace.innerHTML = renderDashboard();
           return;
         }
-        try {
-          const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-          const data = await resp.json();
-          const results = data.results || [];
-          if (!results.length) {
-            searchResults.innerHTML = '<p>No matching stories found.</p>';
+        if (view === 'write-story') {
+          workspace.innerHTML = renderWriteStory();
+          return;
+        }
+        if (view === 'drafts') {
+          workspace.innerHTML = renderDrafts();
+          return;
+        }
+        if (view === 'submitted') {
+          workspace.innerHTML = renderSubmitted();
+          return;
+        }
+        if (view === 'published') {
+          workspace.innerHTML = renderPublished();
+          return;
+        }
+        if (view === 'analytics') {
+          workspace.innerHTML = renderAnalytics();
+          return;
+        }
+        if (view === 'comments') {
+          workspace.innerHTML = renderComments();
+          return;
+        }
+        if (view === 'notifications') {
+          workspace.innerHTML = renderNotifications();
+          return;
+        }
+        if (view === 'settings') {
+          workspace.innerHTML = renderSettings();
+          return;
+        }
+        workspace.innerHTML = renderDashboard();
+      };
+
+      const bindEvents = () => {
+        document.addEventListener('click', (event) => {
+          const viewButton = event.target.closest('[data-view]');
+          if (viewButton) {
+            event.preventDefault();
+            renderView(viewButton.dataset.view);
+          }
+        });
+
+        globalSearch.addEventListener('input', (event) => {
+          const query = event.target.value.trim();
+          if (!query) {
+            renderView('dashboard');
             return;
           }
-          searchResults.innerHTML = results.map((story) => `<div class="card" style="margin-bottom:12px;"><div class="card-content"><strong>${story.title}</strong><p>${story.category || 'News'} • ${story.status || 'draft'}</p></div></div>`).join('');
-        } catch (error) {
-          searchResults.innerHTML = '<p>Search is unavailable right now.</p>';
-        }
-      }
+          renderSearchResults(query);
+        });
 
-      storyForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (!token) {
-          createStoryMessage.textContent = 'Please sign in first.';
+        sidebarToggle.addEventListener('click', () => {
+          const sidebar = document.getElementById('sidebar');
+          sidebar.classList.toggle('collapsed');
+          sidebarToggle.setAttribute('aria-label', sidebar.classList.contains('collapsed') ? 'Expand sidebar' : 'Collapse sidebar');
+          sidebarToggle.textContent = sidebar.classList.contains('collapsed') ? '☰' : '✕';
+        });
+
+        themeToggle.addEventListener('click', () => {
+          const root = document.documentElement;
+          const isDark = root.getAttribute('data-theme') === 'dark';
+          root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+          localStorage.setItem('theme', isDark ? 'light' : 'dark');
+          themeToggle.textContent = isDark ? '🌙' : '☀️';
+        });
+
+        logoutButton.addEventListener('click', () => {
+          localStorage.removeItem('token');
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('currentRole');
+          window.location.href = '/login.html';
+        });
+      };
+
+      const init = () => {
+        profileName.textContent = user;
+        profileRole.textContent = getRoleLabel();
+        profileAvatar.textContent = user.charAt(0).toUpperCase() || 'E';
+        setGreeting();
+        renderNav();
+        bindEvents();
+        if (!token || !user || user === 'Guest') {
+          workspace.innerHTML = `
+            <section class="panel empty-state">
+              <p class="eyebrow">Access required</p>
+              <h3>Please sign in to enter the newsroom.</h3>
+              <p>Use the login screen to continue into your personalised workspace.</p>
+              <a class="button primary" href="/login.html">Go to login</a>
+            </section>
+          `;
           return;
         }
-        const formData = new FormData(storyForm);
-        const payload = {
-          title: formData.get('title'),
-          category: formData.get('category') || 'News',
-          content: formData.get('content'),
-          status: formData.get('status') || 'draft',
-        };
-        try {
-          const response = await fetch('/api/stories', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to save story');
-          createStoryMessage.textContent = `Saved ${data.story?.title || 'story'} successfully.`;
-          storyForm.reset();
-          loadStories();
-        } catch (error) {
-          createStoryMessage.textContent = error.message;
-        }
-      });
+        renderView('dashboard');
+      };
 
-      searchInput?.addEventListener('input', (event) => searchStories(event.target.value));
-
-      loadProfile();
-      loadNotifications();
-      loadContributorPerformance();
-      loadStories();
-      loadCreativeOverview();
-      loadAnalytics();
-    }
+      init();
+    })();
   </script>
 </body>
 </html>

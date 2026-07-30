@@ -12,25 +12,27 @@
 <body>
   <header class="site-header">
     <div class="container navbar">
-      <div class="site-branding">
-        <a href="/" aria-label="Mpumalanga Local Time home">
-          <div style="display:flex;align-items:center;gap:12px">
-            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
-            <div>
-              <strong class="site-title">Mpumalanga Local Time</strong>
-              <span class="site-tagline">Skhatsini eMpumalanga — local news and updates</span>
-            </div>
-          </div>
-        </a>
-      </div>
+      <a href="/" class="brand-mark" aria-label="Mpumalanga Local Time home">
+        <img src="/logo.png" alt="Mpumalanga Local Time logo" />
+      </a>
       <button class="nav-toggle" aria-expanded="false" aria-controls="primary-navigation">Menu</button>
       <nav class="nav-primary" id="primary-navigation" aria-label="Primary navigation">
-        <a href="/news.html">News</a>
-        <a href="/business.html">Business</a>
-        <a href="/arts.html">Arts</a>
-        <a href="/sports.html">Sports</a>
-        <a href="/community.html">Community</a>
+        <div class="nav-item has-mega-menu">
+          <a href="/news.html">News</a>
+          <div class="mega-menu">
+            <a href="/business.html">Business</a>
+            <a href="/arts.html">Arts &amp; Culture</a>
+            <a href="/sports.html">Sports</a>
+            <a href="/community.html">Community</a>
+          </div>
+        </div>
+        <a href="/creatives">Creatives</a>
         <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <div class="header-actions">
+          <a class="btn btn-outline" href="/login.html">Login</a>
+          <a class="btn btn-primary" href="/dashboard.html">Submit Story</a>
+        </div>
       </nav>
     </div>
   </header>
