@@ -90,6 +90,128 @@ test('search endpoint returns story matches', async () => {
   }
 });
 
+test('analytics endpoint returns overview and analytics payloads', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/analytics/overview`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.overview);
+    assert.ok(payload.analytics);
+    assert.equal(typeof payload.analytics.pageViews, 'number');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('municipality route renders a dedicated SEO page', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/municipality/mbombela`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Mbombela/);
+    assert.match(html, /application\/ld\+json/);
+    assert.match(html, /BreadcrumbList/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('breaking news admin endpoint creates a pinned item', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'changeme' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/admin/breaking-news`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ headline: 'Council approves new service delivery plan', slug: 'council-approves-new-service-delivery-plan', priority: 1, status: 'active', articleId: 1 }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.item && payload.item.id);
+    assert.equal(payload.item.headline, 'Council approves new service delivery plan');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('comments endpoint stores and returns comments', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'reporter', password: 'contributor' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const createResponse = await fetch(`http://127.0.0.1:${address.port}/api/stories/1/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ text: 'This is a useful update for our region.' }),
+    });
+
+    assert.equal(createResponse.status, 200);
+    const payload = await createResponse.json();
+    assert.ok(Array.isArray(payload.comments));
+    assert.match(payload.comments[0].text || '', /useful update/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('newsletter subscribe endpoint stores a subscriber', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/newsletter/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Anele', surname: 'Mkhize', email: 'anele@example.com', province: 'Mpumalanga', preferences: ['Breaking News Alerts', 'Sports'] }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.subscriber.email, 'anele@example.com');
+    assert.equal(payload.subscriber.province, 'Mpumalanga');
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test('media upload endpoint stores a file', async () => {
   await initializeDatabase();
   const server = app.listen(0);
@@ -118,6 +240,45 @@ test('media upload endpoint stores a file', async () => {
     const payload = await response.json();
     assert.ok(payload.media && payload.media.id);
     assert.match(payload.media.original_name || '', /sample\.txt/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('admin notification endpoints create and list notifications', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'changeme' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const createResponse = await fetch(`http://127.0.0.1:${address.port}/api/admin/notifications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ title: 'Service update', body: 'Road works will resume at dawn.', category: 'Community', province: 'Mpumalanga' }),
+    });
+
+    assert.equal(createResponse.status, 200);
+    const created = await createResponse.json();
+    assert.ok(created.notification && created.notification.id);
+
+    const listResponse = await fetch(`http://127.0.0.1:${address.port}/api/admin/notifications`, {
+      headers: { Authorization: `Bearer ${loginPayload.token}` },
+    });
+    assert.equal(listResponse.status, 200);
+    const listPayload = await listResponse.json();
+    assert.ok(Array.isArray(listPayload.notifications));
+    assert.ok(listPayload.notifications.some((item) => item.title === 'Service update'));
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

@@ -100,6 +100,52 @@
       </div>
       <div id="categoryNewsGrid" class="category-news-grid" aria-live="polite"></div>
     </section>
+
+    <section class="section-block" aria-labelledby="engagementTitle">
+      <div class="section-headline">
+        <div>
+          <h2 id="engagementTitle" class="section-title">Reader tools</h2>
+          <p class="section-subtitle">Stay informed with local weather, notifications and newsletter updates.</p>
+        </div>
+      </div>
+      <div class="card-grid" style="display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));">
+        <article class="card" id="weatherWidgetPanel" aria-label="Weather widget"></article>
+        <article class="card" aria-label="Push notification preferences">
+          <div class="card-content">
+            <h3>Push notifications</h3>
+            <p class="section-subtitle">Choose your province and categories for breaking alerts.</p>
+            <form id="pushPrefsForm" style="display:grid; gap:10px;">
+              <label>
+                <span>Province</span>
+                <input id="pushProvince" name="province" type="text" value="Mpumalanga" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              </label>
+              <label>
+                <span>Categories</span>
+                <input id="pushCategories" name="categories" type="text" value="Breaking News, Sports" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              </label>
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input id="pushEnabled" name="enabled" type="checkbox" checked />
+                <span>Enable alerts</span>
+              </label>
+              <button class="btn primary" type="submit">Save preferences</button>
+            </form>
+            <p id="pushPrefsMessage" class="meta"></p>
+          </div>
+        </article>
+        <article class="card" aria-label="Newsletter signup">
+          <div class="card-content">
+            <h3>Newsletter</h3>
+            <form id="newsletterForm" style="display:grid; gap:10px;">
+              <input id="newsletterName" name="name" placeholder="Name" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <input id="newsletterSurname" name="surname" placeholder="Surname" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <input id="newsletterEmail" name="email" type="email" placeholder="Email address" required style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <button class="btn primary" type="submit">Subscribe</button>
+            </form>
+            <p id="newsletterMessage" class="meta"></p>
+          </div>
+        </article>
+      </div>
+    </section>
   </main>
 
   <footer class="footer" role="contentinfo">

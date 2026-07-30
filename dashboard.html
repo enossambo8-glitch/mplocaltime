@@ -90,6 +90,43 @@
 
     <section class="card">
       <div class="card-content">
+        <h2>Send notification</h2>
+        <form id="notificationForm" style="display:grid;gap:14px;">
+          <label>
+            <span>Title</span>
+            <input name="title" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
+          </label>
+          <label>
+            <span>Body</span>
+            <textarea name="body" rows="4" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;resize:vertical;"></textarea>
+          </label>
+          <label>
+            <span>Category</span>
+            <input name="category" type="text" placeholder="Community" value="Community" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
+          </label>
+          <label>
+            <span>Province</span>
+            <input name="province" type="text" placeholder="Mpumalanga" value="Mpumalanga" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
+          </label>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+            <button class="btn primary" type="submit">Send notification</button>
+            <span id="notificationMessage" style="color:#a00;"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-content">
+        <h2>Recent notifications</h2>
+        <div id="notificationList">
+          <p>Loading notifications…</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-content">
         <h2>Your stories</h2>
         <div id="storyArea">
           <p>Loading stories…</p>
@@ -103,6 +140,13 @@
         <div id="analyticsArea">
           <p>Loading analytics…</p>
         </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-content">
+        <h2>Editor analytics dashboard</h2>
+        <div id="editorAnalytics" style="display:grid; gap:14px;"></div>
       </div>
     </section>
   </main>
@@ -170,7 +214,11 @@
     const searchResults = document.getElementById('searchResults');
     const storyForm = document.getElementById('storyForm');
     const createStoryMessage = document.getElementById('createStoryMessage');
+    const notificationForm = document.getElementById('notificationForm');
+    const notificationMessage = document.getElementById('notificationMessage');
+    const notificationList = document.getElementById('notificationList');
     const logoutButton = document.getElementById('logoutButton');
+    const editorAnalytics = document.getElementById('editorAnalytics');
 
     function showNotLoggedIn() {
       welcome.textContent = 'Not logged in';
@@ -178,6 +226,9 @@
       storyArea.innerHTML = '<p>Please log in through <a href="/login.html">login</a> to view and manage your stories.</p>';
       searchResults.innerHTML = '<p>Sign in to search the newsroom.</p>';
       storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
+        element.disabled = true;
+      });
+      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
         element.disabled = true;
       });
     }
@@ -195,6 +246,9 @@
       welcome.innerHTML = `Logged in as <strong>${user}</strong> (${role})`;
       logoutButton?.addEventListener('click', handleLogout);
       storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
+        element.disabled = false;
+      });
+      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
         element.disabled = false;
       });
 
@@ -216,6 +270,112 @@
           profileStats.innerHTML = '<p>Unable to load profile right now.</p>';
         }
       }
+
+      async function loadAnalytics() {
+        try {
+          const response = await fetch('/api/analytics/overview', { headers: { Authorization: 'Bearer ' + token } });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Unable to load analytics.');
+          }
+          const overview = data.overview || {};
+          const analytics = data.analytics || {};
+          const editorHtml = `
+            <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px, 1fr));">
+              <div class="card" style="padding:14px;"><strong>Today visitors</strong><div>${analytics.todayVisitors || 0}</div></div>
+              <div class="card" style="padding:14px;"><strong>Page views</strong><div>${analytics.pageViews || overview.viewCount || 0}</div></div>
+              <div class="card" style="padding:14px;"><strong>Articles published</strong><div>${analytics.articlesPublished || overview.publishedCount || 0}</div></div>
+              <div class="card" style="padding:14px;"><strong>Newsletter subs</strong><div>${analytics.newsletterSubscribers || 0}</div></div>
+              <div class="card" style="padding:14px;"><strong>Push subscribers</strong><div>${analytics.pushNotificationSubscribers || 0}</div></div>
+              <div class="card" style="padding:14px;"><strong>Most read</strong><div>${analytics.mostReadArticle || overview.topStories?.[0]?.title || '—'}</div></div>
+            </div>
+            <div class="card" style="padding:14px;">
+              <strong>Performance highlights</strong>
+              <ul>
+                <li>Top reporter: ${analytics.topReporter || '—'}</li>
+                <li>Top municipality: ${analytics.topMunicipality || '—'}</li>
+                <li>Popular category: ${analytics.popularCategories?.[0]?.category || '—'}</li>
+                <li>Bounce rate: ${analytics.bounceRate || '—'}</li>
+              </ul>
+            </div>`;
+          const overviewHtml = `
+            <p><strong>${overview.storyCount || 0}</strong> total stories</p>
+            <p><strong>${overview.publishedCount || analytics.articlesPublished || 0}</strong> published</p>
+            <p><strong>${overview.draftCount || 0}</strong> drafts</p>
+            <p><strong>${overview.commentCount || 0}</strong> comments</p>
+            <p><strong>${overview.viewCount || analytics.pageViews || 0}</strong> total views</p>
+            <ul>${(overview.topStories || []).map((story) => `<li>${story.title} — ${story.views || 0} views</li>`).join('')}</ul>`;
+
+          if (editorAnalytics) {
+            editorAnalytics.innerHTML = editorHtml;
+          }
+          if (analyticsArea) {
+            analyticsArea.innerHTML = overviewHtml;
+          }
+        } catch (error) {
+          if (editorAnalytics) {
+            editorAnalytics.innerHTML = '<p>Analytics unavailable right now.</p>';
+          }
+          if (analyticsArea) {
+            analyticsArea.innerHTML = '<p>Analytics are unavailable right now.</p>';
+          }
+        }
+      }
+
+      async function loadNotifications() {
+        if (!notificationList) return;
+        notificationList.innerHTML = '<p>Loading notifications…</p>';
+        try {
+          const response = await fetch('/api/admin/notifications', {
+            headers: { Authorization: 'Bearer ' + token },
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load notifications');
+          const notifications = data.notifications || [];
+          if (!notifications.length) {
+            notificationList.innerHTML = '<p>No notifications queued yet.</p>';
+            return;
+          }
+          notificationList.innerHTML = notifications.map((item) => `
+            <div class="card" style="margin-bottom:12px;padding:14px;">
+              <strong>${item.title || 'Untitled notification'}</strong>
+              <p style="margin:8px 0;">${item.body || '—'}</p>
+              <div class="meta">${item.category || 'General'} • ${item.province || 'All'} • ${new Date(item.sent_at || item.created_at || Date.now()).toLocaleString('en-ZA')}</div>
+            </div>
+          `).join('');
+        } catch (error) {
+          notificationList.innerHTML = `<p>${error.message}</p>`;
+        }
+      }
+
+      notificationForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!token) {
+          notificationMessage.textContent = 'Please sign in first.';
+          return;
+        }
+        const formData = new FormData(notificationForm);
+        const payload = {
+          title: formData.get('title'),
+          body: formData.get('body'),
+          category: formData.get('category') || 'Community',
+          province: formData.get('province') || 'Mpumalanga',
+        };
+        try {
+          const response = await fetch('/api/admin/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to send notification');
+          notificationMessage.textContent = `Sent ${data.notification?.title || 'notification'} successfully.`;
+          notificationForm.reset();
+          loadNotifications();
+        } catch (error) {
+          notificationMessage.textContent = error.message;
+        }
+      });
 
       async function loadStories() {
         if (!storyArea) return;
@@ -275,28 +435,6 @@
         }
       }
 
-      async function loadAnalytics() {
-        try {
-          const resp = await fetch('/api/analytics/overview');
-          const data = await resp.json();
-          if (!resp.ok) {
-            analyticsArea.innerHTML = `<p>${data.error || 'Unable to load analytics.'}</p>`;
-            return;
-          }
-          const overview = data.overview || {};
-          analyticsArea.innerHTML = `
-            <p><strong>${overview.storyCount || 0}</strong> total stories</p>
-            <p><strong>${overview.publishedCount || 0}</strong> published</p>
-            <p><strong>${overview.draftCount || 0}</strong> drafts</p>
-            <p><strong>${overview.commentCount || 0}</strong> comments</p>
-            <p><strong>${overview.viewCount || 0}</strong> total views</p>
-            <ul>${(overview.topStories || []).map((story) => `<li>${story.title} — ${story.views || 0} views</li>`).join('')}</ul>
-          `;
-        } catch (error) {
-          analyticsArea.innerHTML = '<p>Analytics are unavailable right now.</p>';
-        }
-      }
-
       async function searchStories(query) {
         if (!query) {
           searchResults.innerHTML = '<p>Start typing to search the newsroom.</p>';
@@ -348,6 +486,7 @@
       searchInput?.addEventListener('input', (event) => searchStories(event.target.value));
 
       loadProfile();
+      loadNotifications();
       loadStories();
       loadAnalytics();
     }

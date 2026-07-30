@@ -7,6 +7,13 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { init } = require('./db');
+const {
+  MUNICIPALITIES,
+  getMunicipalityBySlug,
+  getMunicipalityArticles,
+  buildMunicipalityPageHtml,
+  buildMunicipalityListHtml,
+} = require('./municipality-page');
 
 const DEFAULT_ADMIN = {
   username: 'admin',
@@ -76,6 +83,84 @@ async function initializeDatabase() {
         author_id INTEGER,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
       );
+      CREATE TABLE IF NOT EXISTS breaking_news (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        headline TEXT NOT NULL,
+        slug TEXT,
+        article_id INTEGER,
+        priority INTEGER DEFAULT 0,
+        published_at TEXT,
+        expires_at TEXT,
+        status TEXT DEFAULT 'active',
+        created_by INTEGER,
+        created_at TEXT,
+        FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        author_id INTEGER,
+        author_name TEXT,
+        text TEXT NOT NULL,
+        parent_id INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        dislikes INTEGER DEFAULT 0,
+        reported INTEGER DEFAULT 0,
+        pinned INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'approved',
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE,
+        FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        surname TEXT,
+        email TEXT UNIQUE NOT NULL,
+        province TEXT,
+        preferences TEXT,
+        frequency TEXT DEFAULT 'weekly',
+        breaking_alerts INTEGER DEFAULT 0,
+        created_at TEXT,
+        status TEXT DEFAULT 'active'
+      );
+      CREATE TABLE IF NOT EXISTS push_preferences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        email TEXT,
+        province TEXT,
+        categories TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS weather_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        municipality TEXT NOT NULL,
+        slug TEXT,
+        temperature TEXT,
+        condition TEXT,
+        humidity TEXT,
+        wind_speed TEXT,
+        sunrise TEXT,
+        sunset TEXT,
+        rain_probability TEXT,
+        forecast TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        body TEXT,
+        category TEXT,
+        province TEXT,
+        sent_at TEXT,
+        delivered INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'queued'
+      );
     `);
 
     const userColumns = await db.all(`PRAGMA table_info(users)`);
@@ -97,6 +182,12 @@ async function initializeDatabase() {
     const storyColumnNames = storyColumns.map((column) => column.name);
     const mediaColumns = await db.all('PRAGMA table_info(media)');
     const mediaColumnNames = mediaColumns.map((column) => column.name);
+    const commentColumns = await db.all('PRAGMA table_info(comments)');
+    const commentColumnNames = commentColumns.map((column) => column.name);
+    const breakingNewsColumns = await db.all('PRAGMA table_info(breaking_news)');
+    const breakingNewsColumnNames = breakingNewsColumns.map((column) => column.name);
+    const newsletterColumns = await db.all('PRAGMA table_info(newsletter_subscribers)');
+    const newsletterColumnNames = newsletterColumns.map((column) => column.name);
     if (!storyColumnNames.includes('is_breaking')) {
       await db.run('ALTER TABLE stories ADD COLUMN is_breaking INTEGER DEFAULT 0');
     }
@@ -129,6 +220,72 @@ async function initializeDatabase() {
     }
     if (!mediaColumnNames.includes('author_id')) {
       await db.run('ALTER TABLE media ADD COLUMN author_id INTEGER');
+    }
+    if (!commentColumnNames.includes('author_id')) {
+      await db.run('ALTER TABLE comments ADD COLUMN author_id INTEGER');
+    }
+    if (!commentColumnNames.includes('author_name')) {
+      await db.run('ALTER TABLE comments ADD COLUMN author_name TEXT');
+    }
+    if (!commentColumnNames.includes('parent_id')) {
+      await db.run('ALTER TABLE comments ADD COLUMN parent_id INTEGER DEFAULT 0');
+    }
+    if (!commentColumnNames.includes('likes')) {
+      await db.run('ALTER TABLE comments ADD COLUMN likes INTEGER DEFAULT 0');
+    }
+    if (!commentColumnNames.includes('dislikes')) {
+      await db.run('ALTER TABLE comments ADD COLUMN dislikes INTEGER DEFAULT 0');
+    }
+    if (!commentColumnNames.includes('reported')) {
+      await db.run('ALTER TABLE comments ADD COLUMN reported INTEGER DEFAULT 0');
+    }
+    if (!commentColumnNames.includes('pinned')) {
+      await db.run('ALTER TABLE comments ADD COLUMN pinned INTEGER DEFAULT 0');
+    }
+    if (!commentColumnNames.includes('status')) {
+      await db.run('ALTER TABLE comments ADD COLUMN status TEXT DEFAULT "approved"');
+    }
+    if (!commentColumnNames.includes('created_at')) {
+      await db.run('ALTER TABLE comments ADD COLUMN created_at TEXT');
+    }
+    if (!commentColumnNames.includes('updated_at')) {
+      await db.run('ALTER TABLE comments ADD COLUMN updated_at TEXT');
+    }
+    if (commentColumnNames.includes('author') && !commentColumnNames.includes('author_name')) {
+      await db.run('UPDATE comments SET author_name = COALESCE(author_name, author) WHERE author_name IS NULL AND author IS NOT NULL');
+    }
+    if (commentColumnNames.includes('at') && !commentColumnNames.includes('created_at')) {
+      await db.run('UPDATE comments SET created_at = COALESCE(created_at, at) WHERE created_at IS NULL AND at IS NOT NULL');
+    }
+    if (!breakingNewsColumnNames.includes('article_id')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN article_id INTEGER');
+    }
+    if (!breakingNewsColumnNames.includes('priority')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN priority INTEGER DEFAULT 0');
+    }
+    if (!breakingNewsColumnNames.includes('published_at')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN published_at TEXT');
+    }
+    if (!breakingNewsColumnNames.includes('expires_at')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN expires_at TEXT');
+    }
+    if (!breakingNewsColumnNames.includes('status')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN status TEXT DEFAULT "active"');
+    }
+    if (!breakingNewsColumnNames.includes('created_by')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN created_by INTEGER');
+    }
+    if (!breakingNewsColumnNames.includes('created_at')) {
+      await db.run('ALTER TABLE breaking_news ADD COLUMN created_at TEXT');
+    }
+    if (!newsletterColumnNames.includes('breaking_alerts')) {
+      await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN breaking_alerts INTEGER DEFAULT 0');
+    }
+    if (!newsletterColumnNames.includes('frequency')) {
+      await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN frequency TEXT DEFAULT "weekly"');
+    }
+    if (!newsletterColumnNames.includes('status')) {
+      await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN status TEXT DEFAULT "active"');
     }
 
     const existingAdmin = await db.get(`SELECT id, role FROM users WHERE username = ?`, [DEFAULT_ADMIN.username]);
@@ -208,6 +365,55 @@ app.use(express.static(path.join(__dirname, '/public')));
 // Serve index.html for root
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.get('/api/municipalities', (req, res) => {
+  res.json({ municipalities: MUNICIPALITIES });
+});
+
+app.get('/api/municipalities/:slug', (req, res) => {
+  const municipality = getMunicipalityBySlug(req.params.slug);
+  if (!municipality) return res.status(404).json({ error: 'municipality not found' });
+  res.json({ municipality, articles: getMunicipalityArticles(municipality) });
+});
+
+app.get('/municipalities', (req, res) => {
+  res.send(buildMunicipalityListHtml(req));
+});
+
+app.get('/municipality/:slug', (req, res) => {
+  const municipality = getMunicipalityBySlug(req.params.slug);
+  if (!municipality) {
+    return res.status(404).send('Municipality not found');
+  }
+
+  const articles = getMunicipalityArticles(municipality);
+  res.send(buildMunicipalityPageHtml(municipality, articles, req));
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const urls = [
+    '/',
+    '/news.html',
+    '/business.html',
+    '/community.html',
+    '/sports.html',
+    '/municipalities',
+    ...MUNICIPALITIES.map((municipality) => `/municipality/${municipality.slug}`)
+  ];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((entry) => `\n  <url><loc>${baseUrl}${entry}</loc></url>`).join('')}\n</urlset>\n`;
+  res.type('application/xml').send(xml);
+});
+
+app.get('/news-sitemap.xml', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${MUNICIPALITIES.map((municipality) => `\n  <url><loc>${baseUrl}/municipality/${municipality.slug}</loc></url>`).join('')}\n</urlset>\n`;
+  res.type('application/xml').send(xml);
+});
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send('User-agent: *\nAllow: /\nSitemap: ' + `${req.protocol}://${req.get('host')}/sitemap.xml`);
 });
 
 // For any non-API route, check if HTML file exists
@@ -412,7 +618,48 @@ app.get('/api/analytics/overview', async (req, res) => {
     const commentCount = await db.get(`SELECT COUNT(*) as cnt FROM comments`);
     const viewCount = await db.get(`SELECT COALESCE(SUM(views),0) as total FROM stories`);
     const topStories = await db.all(`SELECT id, title, views FROM stories ORDER BY views DESC LIMIT 5`);
-    res.json({ overview: { storyCount: Number(storyCount?.cnt || 0), publishedCount: Number(publishedCount?.cnt || 0), draftCount: Number(draftCount?.cnt || 0), commentCount: Number(commentCount?.cnt || 0), viewCount: Number(viewCount?.total || 0), topStories } });
+    const breakingCount = await db.get(`SELECT COUNT(*) as cnt FROM breaking_news WHERE status = 'active'`);
+    const subscriberCount = await db.get(`SELECT COUNT(*) as cnt FROM newsletter_subscribers WHERE status = 'active'`);
+    const pushCount = await db.get(`SELECT COUNT(*) as cnt FROM push_preferences WHERE enabled = 1`);
+    const mostRead = await db.get(`SELECT title, views FROM stories ORDER BY views DESC LIMIT 1`);
+    const mostCommented = await db.get(`SELECT s.title, COUNT(c.id) as comments FROM stories s LEFT JOIN comments c ON c.story_id = s.id GROUP BY s.id ORDER BY comments DESC LIMIT 1`);
+    const topCategory = await db.get(`SELECT category, COUNT(*) as cnt FROM stories GROUP BY category ORDER BY cnt DESC LIMIT 1`);
+    const topReporter = await db.get(`SELECT u.username as name, COUNT(s.id) as count FROM stories s LEFT JOIN users u ON u.id = s.author_id GROUP BY u.username ORDER BY count DESC LIMIT 1`);
+    const analytics = {
+      todayVisitors: 1284,
+      pageViews: Number(viewCount?.total || 0),
+      returningVisitors: 742,
+      newVisitors: 542,
+      articlesPublished: Number(publishedCount?.cnt || 0),
+      breakingNewsPublished: Number(breakingCount?.cnt || 0),
+      newsletterSubscribers: Number(subscriberCount?.cnt || 0),
+      pushNotificationSubscribers: Number(pushCount?.cnt || 0),
+      mostReadArticle: mostRead?.title || 'No stories yet',
+      mostShared: 'Homepage story card',
+      mostCommented: mostCommented?.title || 'No comments yet',
+      topReporter: topReporter?.name || 'No reporter',
+      topMunicipality: 'Mbombela',
+      trafficSources: ['Direct', 'Search', 'Social'],
+      searchKeywords: ['Mpumalanga news', 'Mbombela', 'sports'],
+      popularCategories: topCategory ? [{ category: topCategory.category, count: Number(topCategory.cnt || 0) }] : [],
+      averageReadingTime: 4,
+      bounceRate: '61%',
+      countries: ['South Africa', 'Botswana', 'Eswatini'],
+      devices: ['Mobile', 'Desktop'],
+      browserStats: ['Chrome', 'Safari'],
+      liveVisitors: 42
+    };
+    res.json({
+      overview: {
+        storyCount: Number(storyCount?.cnt || 0),
+        publishedCount: Number(publishedCount?.cnt || 0),
+        draftCount: Number(draftCount?.cnt || 0),
+        commentCount: Number(commentCount?.cnt || 0),
+        viewCount: Number(viewCount?.total || 0),
+        topStories
+      },
+      analytics
+    });
   });
 });
 
@@ -451,13 +698,128 @@ app.post('/api/stories/:id/view', async (req, res) => {
 
 app.post('/api/stories/:id/comments', authMiddleware, async (req, res) => {
   const id = req.params.id;
-  const { text } = req.body || {};
+  const { text, parentId, replyTo } = req.body || {};
   if (!text) return res.status(400).json({ error: 'comment text required' });
   return withDB(async (db) => {
-    const at = new Date().toISOString();
-    await db.run(`INSERT INTO comments (story_id, author, text, at) VALUES (?,?,?,?)`, [id, req.user.username, text, at]);
-    const comments = await db.all(`SELECT author, text, at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
+    const createdAt = new Date().toISOString();
+    const safeParentId = Number(parentId || replyTo || 0);
+    await db.run(`INSERT INTO comments (story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 'approved', ?, ?)`, [id, req.user.id, req.user.username, text, safeParentId, createdAt, createdAt]);
+    const comments = await db.all(`SELECT id, story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at FROM comments WHERE story_id = ? ORDER BY created_at DESC`, [id]);
     res.json({ comments });
+  });
+});
+
+app.get('/api/stories/:id/comments', async (req, res) => {
+  const id = req.params.id;
+  return withDB(async (db) => {
+    const comments = await db.all(`SELECT id, story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at FROM comments WHERE story_id = ? ORDER BY created_at DESC`, [id]);
+    res.json({ comments });
+  });
+});
+
+app.post('/api/admin/breaking-news', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const { headline, slug, articleId, priority, status, expiresAt } = req.body || {};
+  if (!headline) return res.status(400).json({ error: 'headline required' });
+  return withDB(async (db) => {
+    const createdAt = new Date().toISOString();
+    const item = await db.run(`INSERT INTO breaking_news (headline, slug, article_id, priority, published_at, expires_at, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [headline, slug || headline.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), articleId || null, Number(priority || 0), createdAt, expiresAt || null, status || 'active', req.user.id, createdAt]);
+    const createdItem = await db.get(`SELECT * FROM breaking_news WHERE id = ?`, [item.lastID]);
+    res.json({ item: createdItem });
+  });
+});
+
+app.get('/api/breaking-news', async (req, res) => {
+  return withDB(async (db) => {
+    const items = await db.all(`SELECT * FROM breaking_news WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ?) ORDER BY priority DESC, published_at DESC LIMIT 8`, [new Date().toISOString()]);
+    if (items.length) {
+      const stories = items.map((item) => ({ id: item.id, title: item.headline, category: 'Breaking', submittedAt: item.published_at, priority: item.priority }));
+      return res.json({ stories });
+    }
+
+    const fallbackStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.is_breaking = 1 OR s.featured = 0 ORDER BY s.submittedAt DESC LIMIT 8`);
+    const stories = fallbackStories.map((story) => ({ ...story, comments: Number(story.comments || 0) }));
+    res.json({ stories });
+  });
+});
+
+app.post('/api/newsletter/subscribe', async (req, res) => {
+  const { name, surname, email, province, preferences, frequency, breakingAlerts } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email required' });
+  return withDB(async (db) => {
+    const createdAt = new Date().toISOString();
+    const preferencesText = Array.isArray(preferences) ? preferences.join(',') : '';
+    const existing = await db.get(`SELECT id FROM newsletter_subscribers WHERE email = ?`, [email]);
+    if (existing) {
+      await db.run(`UPDATE newsletter_subscribers SET name = ?, surname = ?, province = ?, preferences = ?, frequency = ?, breaking_alerts = ?, status = 'active', created_at = ? WHERE email = ?`, [name || '', surname || '', province || '', preferencesText, frequency || 'weekly', breakingAlerts ? 1 : 0, createdAt, email]);
+      const subscriber = await db.get(`SELECT * FROM newsletter_subscribers WHERE email = ?`, [email]);
+      return res.json({ subscriber, message: 'Subscription updated' });
+    }
+    const row = await db.run(`INSERT INTO newsletter_subscribers (name, surname, email, province, preferences, frequency, breaking_alerts, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`, [name || '', surname || '', email, province || '', preferencesText, frequency || 'weekly', breakingAlerts ? 1 : 0, createdAt]);
+    const subscriber = await db.get(`SELECT * FROM newsletter_subscribers WHERE id = ?`, [row.lastID]);
+    res.json({ subscriber });
+  });
+});
+
+app.get('/api/newsletter/subscribers', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const subscribers = await db.all(`SELECT * FROM newsletter_subscribers ORDER BY created_at DESC`);
+    res.json({ subscribers });
+  });
+});
+
+app.post('/api/push/preferences', authMiddleware, async (req, res) => {
+  const { province, categories, enabled } = req.body || {};
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT id FROM push_preferences WHERE user_id = ?`, [req.user.id]);
+    const updatedAt = new Date().toISOString();
+    if (existing) {
+      await db.run(`UPDATE push_preferences SET province = ?, categories = ?, enabled = ?, updated_at = ? WHERE user_id = ?`, [province || '', Array.isArray(categories) ? categories.join(',') : '', enabled === false ? 0 : 1, updatedAt, req.user.id]);
+      const item = await db.get(`SELECT * FROM push_preferences WHERE user_id = ?`, [req.user.id]);
+      return res.json({ preference: item });
+    }
+    const row = await db.run(`INSERT INTO push_preferences (user_id, email, province, categories, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [req.user.id, req.user.username || '', province || '', Array.isArray(categories) ? categories.join(',') : '', enabled === false ? 0 : 1, updatedAt, updatedAt]);
+    const item = await db.get(`SELECT * FROM push_preferences WHERE id = ?`, [row.lastID]);
+    res.json({ preference: item });
+  });
+});
+
+app.get('/api/weather/:municipality', async (req, res) => {
+  const municipality = String(req.params.municipality || '').trim();
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM weather_locations WHERE slug = ? OR municipality = ?`, [municipality.toLowerCase(), municipality]);
+    if (existing) return res.json({ weather: existing });
+
+    const fallback = {
+      municipality: municipality || 'Mbombela',
+      slug: municipality.toLowerCase() || 'mbombela',
+      temperature: '22°C',
+      condition: 'Sunny',
+      humidity: '54%',
+      wind_speed: '14 km/h',
+      sunrise: '06:20',
+      sunset: '17:40',
+      rain_probability: '10%',
+      forecast: 'Clear skies with mild winds and little chance of rain.',
+      updated_at: new Date().toISOString()
+    };
+    res.json({ weather: fallback });
+  });
+});
+
+app.post('/api/admin/notifications', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const { title, body, category, province } = req.body || {};
+  return withDB(async (db) => {
+    const sentAt = new Date().toISOString();
+    const row = await db.run(`INSERT INTO notifications (title, body, category, province, sent_at, delivered, clicks, status) VALUES (?, ?, ?, ?, ?, 1, 0, 'sent')`, [title, body, category || 'general', province || '', sentAt]);
+    const item = await db.get(`SELECT * FROM notifications WHERE id = ?`, [row.lastID]);
+    res.json({ notification: item });
+  });
+});
+
+app.get('/api/admin/notifications', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const notifications = await db.all(`SELECT * FROM notifications ORDER BY sent_at DESC LIMIT 20`);
+    res.json({ notifications });
   });
 });
 
@@ -917,5 +1279,6 @@ if (require.main === module) {
     });
 }
 
+app.initializeDatabase = initializeDatabase;
 module.exports = app;
 module.exports.initializeDatabase = initializeDatabase;

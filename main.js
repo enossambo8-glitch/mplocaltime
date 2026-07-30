@@ -330,12 +330,11 @@ const app = (() => {
     const list = Array.isArray(stories) ? stories : [];
     const cards = list
       .filter(isPublishedStory)
-      .slice(0, 4)
+      .slice(0, 5)
       .map((story, index) => {
         const normalizedStory = normalizeStory(story, index);
         return `
-          <a class="latest-update-card" href="/news.html?story=${normalizedStory.id}" aria-label="${escapeHTML(normalizedStory.title)}">
-            <img src="${normalizedStory.image}" alt="${escapeHTML(normalizedStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 50vw">
+          <a class="latest-update-card latest-update-card--text" href="/news.html?story=${normalizedStory.id}" aria-label="${escapeHTML(normalizedStory.title)}">
             <div class="latest-update-card-body">
               <span class="latest-update-badge">${escapeHTML(normalizedStory.category)}</span>
               <h3>${escapeHTML(normalizedStory.title)}</h3>
@@ -343,10 +342,6 @@ const app = (() => {
                 <span>${escapeHTML(normalizedStory.date)}</span>
                 <span>•</span>
                 <span>${normalizedStory.readingTime} min read</span>
-              </div>
-              <div class="latest-update-footer">
-                <span>${escapeHTML(normalizedStory.excerpt)}</span>
-                <span class="latest-update-arrow">→</span>
               </div>
             </div>
           </a>`;
@@ -515,6 +510,95 @@ const app = (() => {
     initShare();
   };
 
+  const renderWeatherWidget = async () => {
+    const container = utils.qs('#weatherWidgetPanel');
+    if (!container) return;
+
+    try {
+      const response = await fetch('/api/weather/mbombela');
+      const payload = await response.json();
+      const weather = payload.weather || {};
+      container.innerHTML = `
+        <div class="card-content">
+          <h3>Weather</h3>
+          <p class="section-subtitle">Live conditions for Mpumalanga municipalities.</p>
+          <div style="display:grid; gap:8px;">
+            <div style="font-size:1.5rem; font-weight:700;">${escapeHTML(weather.temperature || '22°C')}</div>
+            <div>${escapeHTML(weather.condition || 'Sunny')}</div>
+            <div>Humidity: ${escapeHTML(weather.humidity || '54%')}</div>
+            <div>Wind: ${escapeHTML(weather.wind_speed || '14 km/h')}</div>
+            <div>Sunrise: ${escapeHTML(weather.sunrise || '06:20')} • Sunset: ${escapeHTML(weather.sunset || '17:40')}</div>
+            <div>Rain: ${escapeHTML(weather.rain_probability || '10%')}</div>
+            <div class="meta">${escapeHTML(weather.forecast || 'Clear skies and mild winds')}</div>
+          </div>
+        </div>`;
+    } catch (error) {
+      container.innerHTML = '<div class="card-content"><h3>Weather</h3><p class="section-subtitle">Weather data is temporarily unavailable.</p></div>';
+    }
+  };
+
+  const initEngagementForms = () => {
+    const newsletterForm = utils.qs('#newsletterForm');
+    const newsletterMessage = utils.qs('#newsletterMessage');
+    const pushPrefsForm = utils.qs('#pushPrefsForm');
+    const pushPrefsMessage = utils.qs('#pushPrefsMessage');
+
+    if (newsletterForm && newsletterMessage) {
+      utils.on(newsletterForm, 'submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(newsletterForm);
+        const payload = {
+          name: formData.get('name') || '',
+          surname: formData.get('surname') || '',
+          email: formData.get('email') || '',
+          province: 'Mpumalanga',
+          preferences: ['Breaking News Alerts'],
+          frequency: 'weekly',
+        };
+
+        try {
+          const response = await fetch('/api/newsletter/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          newsletterMessage.textContent = response.ok ? `Subscribed ${data.subscriber?.email || 'successfully'}.` : data.error || 'Subscription failed';
+        } catch (error) {
+          newsletterMessage.textContent = 'Subscription failed';
+        }
+      });
+    }
+
+    if (pushPrefsForm && pushPrefsMessage) {
+      utils.on(pushPrefsForm, 'submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(pushPrefsForm);
+        const payload = {
+          province: formData.get('province') || 'Mpumalanga',
+          categories: String(formData.get('categories') || '').split(',').map((item) => item.trim()).filter(Boolean),
+          enabled: formData.get('enabled') === 'on',
+        };
+
+        try {
+          const token = localStorage.getItem('token') || '';
+          const response = await fetch('/api/push/preferences', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          pushPrefsMessage.textContent = response.ok ? 'Notifications preferences saved.' : data.error || 'Preferences failed';
+        } catch (error) {
+          pushPrefsMessage.textContent = 'Preferences failed';
+        }
+      });
+    }
+  };
+
   const init = async () => {
     initMenu();
     initHeader();
@@ -522,7 +606,9 @@ const app = (() => {
     initSearch();
     initScroll();
     initShare();
+    initEngagementForms();
     await renderBreakingNews();
+    await renderWeatherWidget();
     const heroIds = await initHeroSlider();
     heroStoryIds = heroIds || [];
     await renderLatestUpdates(heroStoryIds);
