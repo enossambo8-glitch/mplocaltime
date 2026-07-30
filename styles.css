@@ -2078,6 +2078,8 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 18px;
+  color: inherit;
+  text-decoration: none;
 }
 
 .category-panel-heading {
@@ -2124,17 +2126,55 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
 
 .category-panel-stories {
   display: grid;
+  gap: 14px;
+}
+
+.premium-feature-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.24s ease, box-shadow 0.24s ease;
+}
+
+.premium-feature-card:hover,
+.premium-story-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.1);
+}
+
+.premium-feature-card img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.premium-feature-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.premium-supporting-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
 .premium-story-card {
   display: grid;
-  grid-template-columns: 132px 1fr;
-  gap: 14px;
-  padding: 12px;
-  border-radius: 20px;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(15, 23, 42, 0.06);
+  color: inherit;
+  text-decoration: none;
   overflow: hidden;
   transition: transform 0.24s ease, box-shadow 0.24s ease;
 }
@@ -2146,13 +2186,13 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
 
 .premium-story-card img {
   width: 100%;
-  height: 100%;
-  min-height: 132px;
+  height: 132px;
   object-fit: cover;
-  border-radius: 14px;
+  border-radius: 12px;
   transition: transform 0.3s ease;
 }
 
+.premium-feature-card:hover img,
 .premium-story-card:hover img {
   transform: scale(1.03);
 }
@@ -2189,6 +2229,7 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
   font-size: 0.78rem;
 }
 
+.premium-feature-card h4,
 .premium-story-card h4 {
   margin: 0;
   font-size: 1rem;
@@ -2197,6 +2238,7 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
   color: var(--text);
 }
 
+.premium-feature-card p,
 .premium-story-card p {
   margin: 0;
   color: var(--muted);
@@ -2316,12 +2358,16 @@ label span { display: block; margin-bottom: 8px; color: var(--text); font-weight
     padding: 18px;
   }
 
-  .premium-story-card {
+  .premium-supporting-grid {
     grid-template-columns: 1fr;
   }
 
+  .premium-feature-card img {
+    height: 200px;
+  }
+
   .premium-story-card img {
-    min-height: 180px;
+    height: 180px;
   }
 
   .premium-story-footer {

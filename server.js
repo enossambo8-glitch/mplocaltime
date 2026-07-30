@@ -62,6 +62,7 @@ async function initializeDatabase() {
         seo_title TEXT,
         meta_description TEXT,
         tags TEXT,
+        municipality TEXT,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
       );
       CREATE TABLE IF NOT EXISTS comments (
@@ -161,6 +162,137 @@ async function initializeDatabase() {
         clicks INTEGER DEFAULT 0,
         status TEXT DEFAULT 'queued'
       );
+      CREATE TABLE IF NOT EXISTS artists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        slug TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        stage_name TEXT,
+        bio TEXT,
+        province TEXT,
+        municipality TEXT,
+        city TEXT,
+        discipline TEXT,
+        disciplines TEXT,
+        languages TEXT,
+        years_experience INTEGER DEFAULT 0,
+        awards TEXT,
+        education TEXT,
+        gallery TEXT,
+        videos TEXT,
+        music TEXT,
+        portfolio TEXT,
+        social_links TEXT,
+        website TEXT,
+        email TEXT,
+        availability TEXT DEFAULT 'Available',
+        booking_status TEXT DEFAULT 'Open for bookings',
+        verified INTEGER DEFAULT 0,
+        followers_count INTEGER DEFAULT 0,
+        reviews_count INTEGER DEFAULT 0,
+        profile_photo TEXT,
+        cover_image TEXT,
+        featured INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS artist_bookings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        artist_id INTEGER NOT NULL,
+        client_name TEXT NOT NULL,
+        organisation TEXT,
+        email TEXT,
+        phone TEXT,
+        event_date TEXT,
+        venue TEXT,
+        budget TEXT,
+        message TEXT,
+        status TEXT DEFAULT 'new',
+        created_at TEXT,
+        FOREIGN KEY(artist_id) REFERENCES artists(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS artist_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        artist_id INTEGER NOT NULL,
+        reviewer_name TEXT NOT NULL,
+        rating INTEGER DEFAULT 5,
+        comment TEXT,
+        verified_booking INTEGER DEFAULT 0,
+        created_at TEXT,
+        FOREIGN KEY(artist_id) REFERENCES artists(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS creative_organisations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT,
+        province TEXT,
+        municipality TEXT,
+        city TEXT,
+        bio TEXT,
+        website TEXT,
+        email TEXT,
+        phone TEXT,
+        featured INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS venues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT,
+        province TEXT,
+        municipality TEXT,
+        city TEXT,
+        address TEXT,
+        capacity TEXT,
+        website TEXT,
+        featured INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT,
+        province TEXT,
+        municipality TEXT,
+        city TEXT,
+        venue TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        description TEXT,
+        featured INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS opportunities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT,
+        province TEXT,
+        municipality TEXT,
+        deadline TEXT,
+        description TEXT,
+        featured INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipient_id INTEGER,
+        sender_name TEXT,
+        sender_email TEXT,
+        subject TEXT,
+        message TEXT,
+        status TEXT DEFAULT 'new',
+        created_at TEXT,
+        updated_at TEXT
+      );
     `);
 
     const userColumns = await db.all(`PRAGMA table_info(users)`);
@@ -211,6 +343,9 @@ async function initializeDatabase() {
     }
     if (!storyColumnNames.includes('tags')) {
       await db.run('ALTER TABLE stories ADD COLUMN tags TEXT');
+    }
+    if (!storyColumnNames.includes('municipality')) {
+      await db.run('ALTER TABLE stories ADD COLUMN municipality TEXT');
     }
     if (!mediaColumnNames.includes('caption')) {
       await db.run('ALTER TABLE media ADD COLUMN caption TEXT');
@@ -302,6 +437,150 @@ async function initializeDatabase() {
       await db.run(`INSERT INTO users (username, password, bio, avatar, role) VALUES (?, ?, ?, ?, ?)`, [DEFAULT_USER.username, hash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
     } else if ((existingReporter.role || '').toLowerCase() !== DEFAULT_USER.role.toLowerCase()) {
       await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ? WHERE username = ?`, [DEFAULT_USER.role, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.username]);
+    }
+
+    const existingArtists = await db.get(`SELECT id FROM artists LIMIT 1`);
+    if (!existingArtists) {
+      const now = new Date().toISOString();
+      const sampleArtists = [
+        {
+          slug: 'thandi-mkhize',
+          full_name: 'Thandi Mkhize',
+          stage_name: 'Thandi Mzansi',
+          bio: 'Singer and performer shaping soulful live experiences across Mpumalanga.',
+          province: 'Mpumalanga',
+          municipality: 'Mbombela',
+          city: 'Mbombela',
+          discipline: 'Music',
+          disciplines: 'Music, Performance',
+          languages: 'English, Siswati',
+          years_experience: 8,
+          awards: 'Best Emerging Artist 2024',
+          education: 'B.Tech in Music',
+          portfolio: 'https://example.com/thandi',
+          social_links: 'https://instagram.com/thandi',
+          website: 'https://thandimkhize.co.za',
+          email: 'thandi@example.com',
+          availability: 'Available for booking',
+          booking_status: 'Open for bookings',
+          verified: 1,
+          followers_count: 3200,
+          reviews_count: 24,
+          profile_photo: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80',
+          cover_image: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1400&q=80',
+          featured: 1,
+        },
+        {
+          slug: 'musa-ndlovu',
+          full_name: 'Musa Ndlovu',
+          stage_name: 'Musa Vibe',
+          bio: 'Multidisciplinary creative specialising in spoken word, poetry and community storytelling.',
+          province: 'Mpumalanga',
+          municipality: 'Bushbuckridge',
+          city: 'Bushbuckridge',
+          discipline: 'Poetry',
+          disciplines: 'Poetry, Creative Writing',
+          languages: 'Xitsonga, English',
+          years_experience: 6,
+          awards: 'Arts for Change Award 2023',
+          education: 'BA in Communications',
+          portfolio: 'https://example.com/musa',
+          social_links: 'https://instagram.com/musavibe',
+          website: 'https://musavibe.co.za',
+          email: 'musa@example.com',
+          availability: 'Available for workshops',
+          booking_status: 'Open for bookings',
+          verified: 1,
+          followers_count: 1400,
+          reviews_count: 11,
+          profile_photo: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=800&q=80',
+          cover_image: 'https://images.unsplash.com/photo-1499364615650-ec38552f4f34?auto=format&fit=crop&w=1400&q=80',
+          featured: 1,
+        },
+        {
+          slug: 'sihle-mabaso',
+          full_name: 'Sihle Mabaso',
+          stage_name: 'Sihle Visuals',
+          bio: 'Visual artist creating bold mural work and exhibition pieces for civic and cultural spaces.',
+          province: 'Mpumalanga',
+          municipality: 'Nkomazi',
+          city: 'Komatipoort',
+          discipline: 'Visual Arts',
+          disciplines: 'Visual Arts, Photography',
+          languages: 'English, Zulu',
+          years_experience: 10,
+          awards: 'Provincial Creative Excellence',
+          education: 'Diploma in Fine Arts',
+          portfolio: 'https://example.com/sihle',
+          social_links: 'https://instagram.com/sihlevisuals',
+          website: 'https://sihlevisuals.co.za',
+          email: 'sihle@example.com',
+          availability: 'Available for commissions',
+          booking_status: 'Open for bookings',
+          verified: 1,
+          followers_count: 2200,
+          reviews_count: 19,
+          profile_photo: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=800&q=80',
+          cover_image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1400&q=80',
+          featured: 1,
+        }
+      ];
+
+      for (const artist of sampleArtists) {
+        await db.run(`
+          INSERT INTO artists (
+            slug, full_name, stage_name, bio, province, municipality, city, discipline, disciplines, languages, years_experience, awards, education, gallery, videos, music, portfolio, social_links, website, email, availability, booking_status, verified, followers_count, reviews_count, profile_photo, cover_image, featured, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [artist.slug, artist.full_name, artist.stage_name, artist.bio, artist.province, artist.municipality, artist.city, artist.discipline, artist.disciplines, artist.languages, artist.years_experience, artist.awards, artist.education, '', '', '', artist.portfolio, artist.social_links, artist.website, artist.email, artist.availability, artist.booking_status, artist.verified, artist.followers_count, artist.reviews_count, artist.profile_photo, artist.cover_image, artist.featured, now, now]);
+      }
+    }
+
+    const existingOrganisations = await db.get(`SELECT id FROM creative_organisations LIMIT 1`);
+    if (!existingOrganisations) {
+      const now = new Date().toISOString();
+      const sampleOrganisations = [
+        { slug: 'mpumalanga-arts-council', name: 'Mpumalanga Arts Council', category: 'Arts organisation', province: 'Mpumalanga', municipality: 'Mbombela', city: 'Mbombela', bio: 'Supporting artists through programmes, grants and community showcases.', website: 'https://example.com/mac', email: 'arts@example.com', phone: '013 000 0000', featured: 1 },
+        { slug: 'lowveld-festival-network', name: 'Lowveld Festival Network', category: 'Festival', province: 'Mpumalanga', municipality: 'Nkomazi', city: 'Komatipoort', bio: 'Connecting cultural festivals and public programming across the region.', website: 'https://example.com/lfn', email: 'festivals@example.com', phone: '013 100 0000', featured: 1 }
+      ];
+      for (const organisation of sampleOrganisations) {
+        await db.run(`INSERT INTO creative_organisations (slug, name, category, province, municipality, city, bio, website, email, phone, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [organisation.slug, organisation.name, organisation.category, organisation.province, organisation.municipality, organisation.city, organisation.bio, organisation.website, organisation.email, organisation.phone, organisation.featured, now, now]);
+      }
+    }
+
+    const existingVenues = await db.get(`SELECT id FROM venues LIMIT 1`);
+    if (!existingVenues) {
+      const now = new Date().toISOString();
+      const sampleVenues = [
+        { slug: 'mbombela-theatre', name: 'Mbombela Theatre', category: 'Theatre', province: 'Mpumalanga', municipality: 'Mbombela', city: 'Mbombela', address: '1 Main Road', capacity: '500', website: 'https://example.com/theatre', featured: 1 },
+        { slug: 'bushbuckridge-community-hall', name: 'Bushbuckridge Community Hall', category: 'Community Hall', province: 'Mpumalanga', municipality: 'Bushbuckridge', city: 'Bushbuckridge', address: '14 Cultural Road', capacity: '250', website: 'https://example.com/hall', featured: 1 }
+      ];
+      for (const venue of sampleVenues) {
+        await db.run(`INSERT INTO venues (slug, name, category, province, municipality, city, address, capacity, website, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [venue.slug, venue.name, venue.category, venue.province, venue.municipality, venue.city, venue.address, venue.capacity, venue.website, venue.featured, now, now]);
+      }
+    }
+
+    const existingEvents = await db.get(`SELECT id FROM events LIMIT 1`);
+    if (!existingEvents) {
+      const now = new Date().toISOString();
+      const sampleEvents = [
+        { slug: 'summer-arts-festival', title: 'Summer Arts Festival', category: 'Festival', province: 'Mpumalanga', municipality: 'Mbombela', city: 'Mbombela', venue: 'Mbombela Theatre', start_date: '2026-10-12', end_date: '2026-10-14', description: 'A weekend of music, dance and visual arts.', featured: 1 },
+        { slug: 'poetry-on-the-river', title: 'Poetry on the River', category: 'Poetry', province: 'Mpumalanga', municipality: 'Bushbuckridge', city: 'Bushbuckridge', venue: 'Bushbuckridge Community Hall', start_date: '2026-08-05', end_date: '2026-08-05', description: 'An evening of spoken word and live performances.', featured: 1 }
+      ];
+      for (const event of sampleEvents) {
+        await db.run(`INSERT INTO events (slug, title, category, province, municipality, city, venue, start_date, end_date, description, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [event.slug, event.title, event.category, event.province, event.municipality, event.city, event.venue, event.start_date, event.end_date, event.description, event.featured, now, now]);
+      }
+    }
+
+    const existingOpportunities = await db.get(`SELECT id FROM opportunities LIMIT 1`);
+    if (!existingOpportunities) {
+      const now = new Date().toISOString();
+      const sampleOpportunities = [
+        { slug: 'creative-residency-call', title: 'Creative Residency Call', category: 'Residency', province: 'Mpumalanga', municipality: 'Mbombela', deadline: '2026-09-01', description: 'Apply for a residency supporting new works and public engagement.', featured: 1 },
+        { slug: 'youth-arts-grant', title: 'Youth Arts Grant', category: 'Funding', province: 'Mpumalanga', municipality: 'Bushbuckridge', deadline: '2026-08-15', description: 'Funding for youth-led arts and cultural projects.', featured: 1 }
+      ];
+      for (const opportunity of sampleOpportunities) {
+        await db.run(`INSERT INTO opportunities (slug, title, category, province, municipality, deadline, description, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [opportunity.slug, opportunity.title, opportunity.category, opportunity.province, opportunity.municipality, opportunity.deadline, opportunity.description, opportunity.featured, now, now]);
+      }
     }
 
     const existingStory = await db.get(`SELECT id FROM stories LIMIT 1`);
@@ -417,6 +696,522 @@ app.get('/robots.txt', (req, res) => {
 });
 
 // For any non-API route, check if HTML file exists
+function escapeInteger(value) {
+  return Number(value || 0);
+}
+
+function buildCreativesLandingHtml(req, featuredArtists = [], trendingArtists = [], disciplines = []) {
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creatives | Mpumalanga Local Time</title>
+  <meta name="description" content="Discover Mpumalanga's creative talent, artists, venues, organisations and opportunities across every municipality." />
+  <link rel="canonical" href="${req.protocol}://${req.get('host')}/creatives" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { margin:0; font-family:Inter, Arial, sans-serif; background:#f6f1eb; color:#111; }
+    .creative-shell { max-width:1280px; margin:0 auto; padding:24px 20px 60px; }
+    .hero-card { background:#111; color:#fff; padding:36px; border-radius:28px; display:grid; gap:24px; box-shadow:0 24px 60px rgba(0,0,0,.14); }
+    .hero-grid { display:grid; gap:24px; grid-template-columns:1.3fr 0.7fr; align-items:center; }
+    .hero-card h1 { font-size:clamp(2rem, 3vw, 3.1rem); margin:0 0 10px; }
+    .hero-card p { font-size:1.04rem; color:#e5d9ce; margin:0; line-height:1.6; }
+    .search-panel { background:#fff; padding:20px; border-radius:24px; color:#111; display:grid; gap:12px; }
+    .search-grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); }
+    .search-panel input, .search-panel select, .search-panel button { width:100%; padding:13px 14px; border-radius:999px; border:1px solid #ddd; font:inherit; }
+    .search-actions { display:flex; flex-wrap:wrap; gap:12px; }
+    .btn { padding:12px 16px; border-radius:999px; border:none; cursor:pointer; font-weight:600; }
+    .btn-primary { background:#c00; color:#fff; }
+    .btn-secondary { background:#f1ece7; color:#111; }
+    .section-card { background:#fff; border-radius:24px; padding:24px; box-shadow:0 12px 30px rgba(0,0,0,.06); }
+    .cards { display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); }
+    .portrait-card { background:#faf7f2; border:1px solid #eee; border-radius:20px; padding:16px; display:grid; gap:10px; }
+    .portrait-card img { width:100%; height:190px; object-fit:cover; border-radius:16px; }
+    .tag-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .pill { padding:6px 10px; border-radius:999px; background:#eee; font-size:.8rem; }
+    .grid-two { display:grid; gap:18px; grid-template-columns:1.2fr 0.8fr; }
+    .nav-links { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 30px; }
+    .nav-links a { color:#111; text-decoration:none; background:#fff; padding:10px 14px; border-radius:999px; }
+    @media (max-width: 760px) { .hero-grid, .grid-two { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home">
+          <div style="display:flex;align-items:center;gap:12px">
+            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
+            <div>
+              <strong class="site-title">Mpumalanga Local Time</strong>
+              <span class="site-tagline">Creative portal</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation">
+        <a href="/">Home</a>
+        <a href="/creatives">Creatives</a>
+        <a href="/dashboard.html">Dashboard</a>
+      </nav>
+    </div>
+  </header>
+  <main class="creative-shell">
+    <div class="nav-links">
+      <a href="/creatives">All creatives</a>
+      <a href="/creatives/music">Music</a>
+      <a href="/creatives/poetry">Poetry</a>
+      <a href="/creatives/visual-arts">Visual Arts</a>
+      <a href="/creatives/opportunities">Opportunities</a>
+      <a href="/creatives/mpumalanga">Mpumalanga</a>
+    </div>
+    <section class="hero-card">
+      <div class="hero-grid">
+        <div>
+          <p class="pill" style="background:#2d2d2d;color:#fff;width:max-content">New creative economy hub for Mpumalanga</p>
+          <h1>Discover Mpumalanga's Creative Talent</h1>
+          <p>Find artists, performers, creatives, organisations, venues and opportunities from every municipality across Mpumalanga. This portal connects the newsroom with the creative economy through searchable profiles, bookings and events.</p>
+        </div>
+        <div class="search-panel">
+          <div class="search-grid">
+            <input type="text" placeholder="Artist name" />
+            <input type="text" placeholder="Stage name" />
+            <input type="text" placeholder="Discipline" />
+            <input type="text" placeholder="Municipality" />
+            <select><option>Province</option><option>Mpumalanga</option></select>
+            <select><option>Availability</option><option>Available</option></select>
+          </div>
+          <div class="search-actions">
+            <button class="btn btn-primary" type="button">Find Artists</button>
+            <a class="btn btn-secondary" href="/dashboard.html">Register as an Artist</a>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="section-card" style="margin-top:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <h2 style="margin:0;">Featured Artists</h2>
+        <a href="/creatives" style="color:#c00;">View all profiles</a>
+      </div>
+      <div class="cards" style="margin-top:16px;">
+        ${featuredArtists.map((artist) => `
+          <article class="portrait-card">
+            <img src="${escapeHtml(artist.profile_photo || '/logo.png')}" alt="${escapeHtml(artist.stage_name || artist.full_name)}" />
+            <div style="display:grid;gap:6px;">
+              <strong>${escapeHtml(artist.stage_name || artist.full_name)}</strong>
+              <div>${escapeHtml(artist.full_name)}</div>
+              <div class="tag-row"><span class="pill">${escapeHtml(artist.discipline || 'Creative')}</span><span class="pill">${escapeHtml(artist.municipality || 'Mpumalanga')}</span></div>
+              <a href="/creatives/artists/${escapeHtml(artist.slug)}" style="color:#c00;">View profile</a>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+    <section class="section-card" style="margin-top:24px;">
+      <h2 style="margin-top:0;">Trending Creatives</h2>
+      <div class="cards">
+        ${trendingArtists.map((artist) => `
+          <article class="portrait-card">
+            <strong>${escapeHtml(artist.stage_name || artist.full_name)}</strong>
+            <div>${escapeHtml(artist.discipline || 'Creative')}</div>
+            <div>${escapeHtml(artist.municipality || 'Mpumalanga')} • ${escapeHtml(artist.availability || 'Available')}</div>
+            <a href="/creatives/artists/${escapeHtml(artist.slug)}" style="color:#c00;">Open profile</a>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+    <section class="section-card" style="margin-top:24px;">
+      <div class="grid-two">
+        <div>
+          <h2 style="margin-top:0;">Explore the creative economy</h2>
+          <p>Browse disciplines, featured organisations, venues and opportunities from the province’s creative network.</p>
+          <div class="tag-row">
+            ${disciplines.map((item) => `<a class="pill" href="/creatives/${escapeHtml(item.slug)}" style="text-decoration:none;color:#111;">${escapeHtml(item.label)}</a>`).join('')}
+          </div>
+        </div>
+        <div>
+          <h3 style="margin-top:0;">Top municipalities</h3>
+          <ul>
+            ${MUNICIPALITIES.slice(0, 6).map((municipality) => `<li><a href="/creatives/municipality/${escapeHtml(municipality.slug)}" style="color:#111;">${escapeHtml(municipality.name)}</a></li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildArtistProfileHtml(artist, relatedNews, req) {
+  const disciplineList = (artist.disciplines || artist.discipline || 'Creative').split(',').filter(Boolean).slice(0, 4);
+  const socials = String(artist.social_links || '').split(',').filter(Boolean);
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(artist.stage_name || artist.full_name)} | Mpumalanga Creatives</title>
+  <meta name="description" content="${escapeHtml((artist.bio || '').slice(0, 160))}" />
+  <link rel="canonical" href="${req.protocol}://${req.get('host')}/creatives/artists/${escapeHtml(artist.slug)}" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body { margin:0; background:#f7f3ee; color:#111; font-family:Inter, Arial, sans-serif; }
+    .profile-shell { max-width:1200px; margin:0 auto; padding:24px 20px 60px; display:grid; gap:22px; }
+    .hero-card { background:#111; color:#fff; padding:24px; border-radius:24px; display:grid; gap:20px; }
+    .profile-grid { display:grid; gap:20px; grid-template-columns:1.1fr 0.9fr; } 
+    .profile-card, .section-card { background:#fff; border-radius:24px; padding:24px; box-shadow:0 12px 35px rgba(0,0,0,.06); }
+    .portrait { width:100%; height:280px; object-fit:cover; border-radius:20px; }
+    .pill { padding:8px 12px; border-radius:999px; background:#f4ebdf; display:inline-block; font-size:.8rem; margin:4px 6px 0 0; }
+    .meta-list { display:grid; gap:8px; }
+    .tag-row { display:flex; flex-wrap:wrap; gap:8px; }
+    .actions a, .actions button { display:inline-block; padding:12px 14px; border-radius:999px; background:#c00; color:#fff; text-decoration:none; margin-top:8px; margin-right:8px; }
+    @media (max-width:760px) { .profile-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container navbar">
+      <div class="site-branding">
+        <a href="/" aria-label="Mpumalanga Local Time home"><div style="display:flex;align-items:center;gap:12px"><img src="/logo.png" alt="Mpumalanga Local Time logo" /><div><strong class="site-title">Mpumalanga Local Time</strong><span class="site-tagline">Artist profile</span></div></div></a>
+      </div>
+      <nav class="nav-primary" aria-label="Primary navigation"><a href="/">Home</a><a href="/creatives">Creatives</a><a href="/dashboard.html">Dashboard</a></nav>
+    </div>
+  </header>
+  <main class="profile-shell">
+    <section class="hero-card">
+      <div class="profile-grid">
+        <div>
+          <div class="tag-row">
+            ${artist.verified ? '<span class="pill" style="background:#2f2f2f;color:#fff">Verified Artist</span>' : ''}
+            <span class="pill" style="background:#2f2f2f;color:#fff">${escapeHtml(artist.availability || 'Available')}</span>
+          </div>
+          <h1 style="margin:10px 0 6px;">${escapeHtml(artist.stage_name || artist.full_name)}</h1>
+          <p style="margin:0;color:#e3d2c0;">${escapeHtml(artist.full_name)} • ${escapeHtml(artist.municipality || 'Mpumalanga')}</p>
+          <p style="margin-top:14px;color:#e3d2c0;line-height:1.6;">${escapeHtml(artist.bio || 'Creative profile now live on Mpumalanga Local Time.')}</p>
+          <div class="actions">
+            <a href="#booking">Book Artist</a>
+            <a href="/creatives">Explore more creatives</a>
+          </div>
+        </div>
+        <div>
+          <img class="portrait" src="${escapeHtml(artist.profile_photo || artist.cover_image || '/logo.png')}" alt="${escapeHtml(artist.stage_name || artist.full_name)}" />
+        </div>
+      </div>
+    </section>
+    <section class="profile-grid">
+      <div class="profile-card">
+        <h2 style="margin-top:0;">About</h2>
+        <p>${escapeHtml(artist.bio || 'A remarkable creative from Mpumalanga.')}</p>
+        <div class="meta-list">
+          <div><strong>Province:</strong> ${escapeHtml(artist.province || 'Mpumalanga')}</div>
+          <div><strong>Municipality:</strong> ${escapeHtml(artist.municipality || 'Mpumalanga')}</div>
+          <div><strong>City:</strong> ${escapeHtml(artist.city || 'N/A')}</div>
+          <div><strong>Primary discipline:</strong> ${escapeHtml(artist.discipline || 'Creative')}</div>
+          <div><strong>Secondary disciplines:</strong> ${escapeHtml(artist.disciplines || '—')}</div>
+          <div><strong>Languages:</strong> ${escapeHtml(artist.languages || '—')}</div>
+          <div><strong>Years of experience:</strong> ${escapeInteger(artist.years_experience)}</div>
+          <div><strong>Awards:</strong> ${escapeHtml(artist.awards || '—')}</div>
+          <div><strong>Education:</strong> ${escapeHtml(artist.education || '—')}</div>
+        </div>
+        <div class="tag-row" style="margin-top:12px;">
+          ${disciplineList.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join('')}
+        </div>
+      </div>
+      <div class="profile-card">
+        <h2 style="margin-top:0;">Profile highlights</h2>
+        <div class="meta-list">
+          <div><strong>Availability:</strong> ${escapeHtml(artist.availability || 'Available')}</div>
+          <div><strong>Booking status:</strong> ${escapeHtml(artist.booking_status || 'Open for bookings')}</div>
+          <div><strong>Followers:</strong> ${escapeInteger(artist.followers_count)}</div>
+          <div><strong>Reviews:</strong> ${escapeInteger(artist.reviews_count)}</div>
+          <div><strong>Website:</strong> <a href="${escapeAttr(artist.website || '#')}" style="color:#c00;">${escapeHtml(artist.website || '—')}</a></div>
+          <div><strong>Email:</strong> ${escapeHtml(artist.email || '—')}</div>
+        </div>
+        <div style="margin-top:14px;">
+          ${socials.length ? socials.map((entry) => `<a href="${escapeAttr(entry)}" style="color:#c00;display:inline-block;margin-right:10px;">${escapeHtml(entry)}</a>`).join('') : '<span>No social media links yet.</span>'}
+        </div>
+      </div>
+    </section>
+    <section class="section-card" id="booking">
+      <h2 style="margin-top:0;">Book this artist</h2>
+      <form id="bookingForm" style="display:grid;gap:12px;">
+        <input name="clientName" placeholder="Client name" required />
+        <input name="organisation" placeholder="Organisation" />
+        <input name="email" type="email" placeholder="Email" required />
+        <input name="phone" placeholder="Phone" />
+        <input name="eventDate" type="date" />
+        <input name="venue" placeholder="Venue" />
+        <input name="budget" placeholder="Budget" />
+        <textarea name="message" rows="5" placeholder="Tell us about your event"></textarea>
+        <button class="btn" type="submit">Send booking request</button>
+        <div id="bookingMessage"></div>
+      </form>
+      <script>
+        (function() {
+          const form = document.getElementById('bookingForm');
+          const message = document.getElementById('bookingMessage');
+          form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const payload = Object.fromEntries(new FormData(form).entries());
+            const response = await fetch('/api/artists/${escapeHtml(artist.id)}/bookings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+            const data = await response.json();
+            message.textContent = response.ok ? 'Booking request sent successfully.' : (data.error || 'Unable to send booking.');
+          });
+        })();
+      </script>
+    </section>
+    <section class="section-card">
+      <h2 style="margin-top:0;">Latest news featuring this artist</h2>
+      ${relatedNews.length ? relatedNews.map((item) => `<div style="margin-bottom:12px;"><a href="/story/${escapeHtml(item.id)}" style="color:#c00;font-weight:600;">${escapeHtml(item.title)}</a><div>${escapeHtml(item.excerpt || '')}</div></div>`).join('') : '<p>No newsroom mentions yet.</p>'}
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildDisciplinePageHtml(discipline, artists, req) {
+  const label = discipline[0].toUpperCase() + discipline.slice(1).replace(/-/g, ' ');
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(label)} | Mpumalanga Creatives</title>
+  <meta name="description" content="Browse ${escapeHtml(label)} creatives and professionals across Mpumalanga." />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>body{margin:0;font-family:Inter,Arial,sans-serif;background:#f7f2eb;color:#111;} .shell{max-width:1180px;margin:0 auto;padding:24px 20px 60px;} .card{background:#fff;border-radius:24px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06);} .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}</style>
+</head>
+<body>
+  <header class="site-header"><div class="container navbar"><div class="site-branding"><a href="/" aria-label="Mpumalanga Local Time home"><div style="display:flex;align-items:center;gap:12px"><img src="/logo.png" alt="Mpumalanga Local Time logo" /><div><strong class="site-title">Mpumalanga Local Time</strong><span class="site-tagline">Discipline</span></div></div></a></div><nav class="nav-primary" aria-label="Primary navigation"><a href="/">Home</a><a href="/creatives">Creatives</a></nav></div></header>
+  <main class="shell"><div class="card"><h1>${escapeHtml(label)}</h1><p>Discover ${escapeHtml(label)} professionals, performers and organisations across Mpumalanga.</p><div class="cards">${artists.length ? artists.map((artist) => `<article class="card" style="padding:16px;"><strong>${escapeHtml(artist.stage_name || artist.full_name)}</strong><div>${escapeHtml(artist.municipality || 'Mpumalanga')}</div><div>${escapeHtml(artist.discipline || label)}</div><a href="/creatives/artists/${escapeHtml(artist.slug)}" style="color:#c00;">View profile</a></article>`).join('') : '<p>No profiles for this discipline yet.</p>'}</div></div></main>
+</body>
+</html>`;
+}
+
+function buildMunicipalityCreativePageHtml(municipality, artists, req) {
+  const label = municipality.name;
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(label)} Creatives | Mpumalanga Local Time</title>
+  <meta name="description" content="Featured artists, events and creative organisations from ${escapeHtml(label)}." />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>body{margin:0;font-family:Inter,Arial,sans-serif;background:#f7f1e8;color:#111;} .shell{max-width:1180px;margin:0 auto;padding:24px 20px 60px;} .card{background:#fff;border-radius:24px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06);} .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}</style>
+</head>
+<body>
+  <header class="site-header"><div class="container navbar"><div class="site-branding"><a href="/" aria-label="Mpumalanga Local Time home"><div style="display:flex;align-items:center;gap:12px"><img src="/logo.png" alt="Mpumalanga Local Time logo" /><div><strong class="site-title">Mpumalanga Local Time</strong><span class="site-tagline">Municipality</span></div></div></a></div><nav class="nav-primary" aria-label="Primary navigation"><a href="/">Home</a><a href="/creatives">Creatives</a></nav></div></header>
+  <main class="shell"><div class="card"><h1>${escapeHtml(label)} Creatives</h1><p>Find featured artists, latest profiles and creative opportunities from ${escapeHtml(label)}.</p><div class="cards">${artists.length ? artists.map((artist) => `<article class="card" style="padding:16px;"><strong>${escapeHtml(artist.stage_name || artist.full_name)}</strong><div>${escapeHtml(artist.discipline || 'Creative')}</div><div>${escapeHtml(artist.availability || 'Available')}</div><a href="/creatives/artists/${escapeHtml(artist.slug)}" style="color:#c00;">View profile</a></article>`).join('') : '<p>No profiles for this municipality yet.</p>'}</div></div></main>
+</body>
+</html>`;
+}
+
+function buildCreativeDirectoryHtml(title, items, req) {
+  return `<!doctype html>
+<html lang="en-ZA">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(title)} | Mpumalanga Creatives</title>
+  <meta name="description" content="Browse ${escapeHtml(title.toLowerCase())} for the creative economy in Mpumalanga." />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>body{margin:0;font-family:Inter,Arial,sans-serif;background:#f7f2eb;color:#111;} .shell{max-width:1180px;margin:0 auto;padding:24px 20px 60px;} .card{background:#fff;border-radius:24px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.06);} .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}</style>
+</head>
+<body>
+  <header class="site-header"><div class="container navbar"><div class="site-branding"><a href="/" aria-label="Mpumalanga Local Time home"><div style="display:flex;align-items:center;gap:12px"><img src="/logo.png" alt="Mpumalanga Local Time logo" /><div><strong class="site-title">Mpumalanga Local Time</strong><span class="site-tagline">Creative directory</span></div></div></a></div><nav class="nav-primary" aria-label="Primary navigation"><a href="/">Home</a><a href="/creatives">Creatives</a></nav></div></header>
+  <main class="shell"><div class="card"><h1>${escapeHtml(title)}</h1><p>Discover the creative ecosystem that is shaping Mpumalanga’s cultural and commercial life.</p><div class="cards">${items.length ? items.map((item) => `<article class="card" style="padding:16px;"><strong>${escapeHtml(item.name || item.title)}</strong><div>${escapeHtml(item.category || item.municipality || 'Mpumalanga')}</div><div>${escapeHtml(item.city || item.province || '')}</div></article>`).join('') : '<p>No entries yet.</p>'}</div></div></main>
+</body>
+</html>`;
+}
+
+app.get('/creatives', async (req, res) => {
+  return withDB(async (db) => {
+    const featuredArtists = await db.all(`SELECT * FROM artists WHERE featured = 1 ORDER BY followers_count DESC LIMIT 6`);
+    const trendingArtists = await db.all(`SELECT * FROM artists ORDER BY followers_count DESC LIMIT 6`);
+    const disciplines = [
+      { slug: 'music', label: 'Music' },
+      { slug: 'poetry', label: 'Poetry' },
+      { slug: 'dance', label: 'Dance' },
+      { slug: 'visual-arts', label: 'Visual Arts' },
+      { slug: 'film', label: 'Film' },
+      { slug: 'fashion-design', label: 'Fashion Design' },
+      { slug: 'creative-writing', label: 'Creative Writing' },
+      { slug: 'podcasting', label: 'Podcasting' }
+    ];
+    res.send(buildCreativesLandingHtml(req, featuredArtists, trendingArtists, disciplines));
+  });
+});
+
+app.get('/creatives/artists/:slug', async (req, res) => {
+  return withDB(async (db) => {
+    const artist = await db.get(`SELECT * FROM artists WHERE slug = ?`, [req.params.slug]);
+    if (!artist) return res.status(404).send('Artist profile not found');
+    const relatedNews = await db.all(`SELECT id, title, excerpt FROM stories WHERE lower(title) LIKE ? OR lower(content) LIKE ? ORDER BY submittedAt DESC LIMIT 5`, [`%${String(artist.full_name || artist.stage_name || '').toLowerCase()}%`, `%${String(artist.full_name || artist.stage_name || '').toLowerCase()}%`]);
+    res.send(buildArtistProfileHtml(artist, relatedNews, req));
+  });
+});
+
+app.get('/creatives/organisations', async (req, res) => {
+  return withDB(async (db) => {
+    const organisations = await db.all(`SELECT * FROM creative_organisations ORDER BY featured DESC, created_at DESC LIMIT 20`);
+    res.send(buildCreativeDirectoryHtml('Creative organisations', organisations, req));
+  });
+});
+
+app.get('/creatives/venues', async (req, res) => {
+  return withDB(async (db) => {
+    const venues = await db.all(`SELECT * FROM venues ORDER BY featured DESC, created_at DESC LIMIT 20`);
+    res.send(buildCreativeDirectoryHtml('Venues', venues, req));
+  });
+});
+
+app.get('/creatives/events', async (req, res) => {
+  return withDB(async (db) => {
+    const events = await db.all(`SELECT * FROM events ORDER BY featured DESC, start_date DESC LIMIT 20`);
+    res.send(buildCreativeDirectoryHtml('Events', events, req));
+  });
+});
+
+app.get('/creatives/opportunities', async (req, res) => {
+  return withDB(async (db) => {
+    const opportunities = await db.all(`SELECT * FROM opportunities ORDER BY featured DESC, deadline ASC LIMIT 20`);
+    res.send(buildCreativeDirectoryHtml('Creative opportunities', opportunities, req));
+  });
+});
+
+app.get('/creatives/:discipline', async (req, res) => {
+  const slug = String(req.params.discipline || '').toLowerCase();
+  if (slug === 'artists' || slug === 'municipality' || slug === 'mpumalanga' || slug === 'opportunities') {
+    return res.redirect('/creatives');
+  }
+  return withDB(async (db) => {
+    const artists = await db.all(`SELECT * FROM artists WHERE lower(COALESCE(discipline, '')) = ? OR lower(COALESCE(disciplines, '')) LIKE ? ORDER BY followers_count DESC LIMIT 12`, [slug.replace(/-/g, ' '), `%${slug.replace(/-/g, ' ')}%`]);
+    res.send(buildDisciplinePageHtml(slug, artists, req));
+  });
+});
+
+app.get('/creatives/mpumalanga', async (req, res) => {
+  return withDB(async (db) => {
+    const artists = await db.all(`SELECT * FROM artists WHERE province = 'Mpumalanga' ORDER BY followers_count DESC LIMIT 12`);
+    res.send(buildMunicipalityCreativePageHtml({ name: 'Mpumalanga' }, artists, req));
+  });
+});
+
+app.get('/creatives/municipality/:slug', async (req, res) => {
+  const municipality = MUNICIPALITIES.find((entry) => entry.slug === String(req.params.slug).toLowerCase());
+  if (!municipality) return res.status(404).send('Municipality not found');
+  return withDB(async (db) => {
+    const artists = await db.all(`SELECT * FROM artists WHERE lower(COALESCE(municipality, '')) = ? ORDER BY followers_count DESC LIMIT 12`, [municipality.name.toLowerCase()]);
+    res.send(buildMunicipalityCreativePageHtml(municipality, artists, req));
+  });
+});
+
+app.get('/api/artists', async (req, res) => {
+  return withDB(async (db) => {
+    const artists = await db.all(`SELECT * FROM artists ORDER BY followers_count DESC LIMIT 24`);
+    res.json({ artists });
+  });
+});
+
+app.post('/api/artists/me', authMiddleware, async (req, res) => {
+  const payload = req.body || {};
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM artists WHERE user_id = ?`, [req.user.id]);
+    const values = [
+      payload.slug || payload.stage_name || req.user.username,
+      payload.full_name || req.user.username,
+      payload.stage_name || '',
+      payload.bio || '',
+      payload.province || 'Mpumalanga',
+      payload.municipality || '',
+      payload.city || '',
+      payload.discipline || 'Creative',
+      payload.disciplines || '',
+      payload.languages || '',
+      Number(payload.years_experience || 0),
+      payload.awards || '',
+      payload.education || '',
+      payload.portfolio || '',
+      payload.social_links || '',
+      payload.website || '',
+      payload.email || '',
+      payload.availability || 'Available for booking',
+      payload.booking_status || 'Open for bookings',
+      payload.verified ? 1 : 0,
+      Number(payload.followers_count || 0),
+      Number(payload.reviews_count || 0),
+      payload.profile_photo || '',
+      payload.cover_image || '',
+      req.user.id,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    ];
+    if (existing) {
+      await db.run(`UPDATE artists SET slug = ?, full_name = ?, stage_name = ?, bio = ?, province = ?, municipality = ?, city = ?, discipline = ?, disciplines = ?, languages = ?, years_experience = ?, awards = ?, education = ?, portfolio = ?, social_links = ?, website = ?, email = ?, availability = ?, booking_status = ?, verified = ?, followers_count = ?, reviews_count = ?, profile_photo = ?, cover_image = ?, updated_at = ? WHERE user_id = ?`, [...values.slice(0, 25), values[25], values[26], values[27], values[28], values[29]]);
+    } else {
+      await db.run(`INSERT INTO artists (slug, full_name, stage_name, bio, province, municipality, city, discipline, disciplines, languages, years_experience, awards, education, portfolio, social_links, website, email, availability, booking_status, verified, followers_count, reviews_count, profile_photo, cover_image, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, values);
+    }
+    const artist = await db.get(`SELECT * FROM artists WHERE user_id = ?`, [req.user.id]);
+    res.json({ artist });
+  });
+});
+
+app.post('/api/artists/:id/bookings', async (req, res) => {
+  const artistId = Number(req.params.id);
+  if (!artistId) return res.status(400).json({ error: 'artist id required' });
+  const { clientName, organisation, email, phone, eventDate, venue, budget, message } = req.body || {};
+  if (!clientName || !email) return res.status(400).json({ error: 'client name and email required' });
+  return withDB(async (db) => {
+    const artist = await db.get(`SELECT * FROM artists WHERE id = ?`, [artistId]);
+    if (!artist) return res.status(404).json({ error: 'artist not found' });
+    const createdAt = new Date().toISOString();
+    const row = await db.run(`INSERT INTO artist_bookings (artist_id, client_name, organisation, email, phone, event_date, venue, budget, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)`, [artistId, clientName, organisation || '', email, phone || '', eventDate || '', venue || '', budget || '', message || '', createdAt]);
+    const booking = await db.get(`SELECT * FROM artist_bookings WHERE id = ?`, [row.lastID]);
+    res.json({ booking });
+  });
+});
+
+app.post('/api/messages', async (req, res) => {
+  const { recipientId, senderName, senderEmail, subject, message } = req.body || {};
+  if (!recipientId || !senderName || !senderEmail || !message) return res.status(400).json({ error: 'recipient, sender name, sender email and message are required' });
+  return withDB(async (db) => {
+    const row = await db.run(`INSERT INTO messages (recipient_id, sender_name, sender_email, subject, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)`, [recipientId, senderName, senderEmail, subject || 'Creative enquiry', message, new Date().toISOString(), new Date().toISOString()]);
+    const item = await db.get(`SELECT * FROM messages WHERE id = ?`, [row.lastID]);
+    res.json({ message: item });
+  });
+});
+
+app.get('/api/messages', async (req, res) => {
+  return withDB(async (db) => {
+    const messages = await db.all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT 20`);
+    res.json({ messages });
+  });
+});
+
+app.post('/api/artists/:id/reviews', async (req, res) => {
+  const artistId = Number(req.params.id);
+  const { reviewerName, rating, comment, verifiedBooking } = req.body || {};
+  if (!artistId || !reviewerName) return res.status(400).json({ error: 'reviewer name required' });
+  return withDB(async (db) => {
+    const artist = await db.get(`SELECT * FROM artists WHERE id = ?`, [artistId]);
+    if (!artist) return res.status(404).json({ error: 'artist not found' });
+    const row = await db.run(`INSERT INTO artist_reviews (artist_id, reviewer_name, rating, comment, verified_booking, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [artistId, reviewerName, Number(rating || 5), comment || '', verifiedBooking ? 1 : 0, new Date().toISOString()]);
+    const review = await db.get(`SELECT * FROM artist_reviews WHERE id = ?`, [row.lastID]);
+    await db.run(`UPDATE artists SET reviews_count = COALESCE(reviews_count, 0) + 1 WHERE id = ?`, [artistId]);
+    res.json({ review });
+  });
+});
+
+app.get('/api/creatives/search', async (req, res) => {
+  const query = String(req.query.q || '').trim().toLowerCase();
+  return withDB(async (db) => {
+    const artists = await db.all(`SELECT * FROM artists WHERE lower(COALESCE(full_name, '')) LIKE ? OR lower(COALESCE(stage_name, '')) LIKE ? OR lower(COALESCE(discipline, '')) LIKE ? OR lower(COALESCE(municipality, '')) LIKE ? ORDER BY followers_count DESC LIMIT 12`, [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]);
+    res.json({ artists });
+  });
+});
+
 app.get('/:page', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   const file = path.join(__dirname, req.path + '.html');
@@ -505,6 +1300,7 @@ function normalizeStoryPayload(payload = {}) {
     seo_title: payload.seo_title || payload.seoTitle || '',
     meta_description: payload.meta_description || payload.metaDescription || '',
     tags: payload.tags || '',
+    municipality: payload.municipality || '',
   };
 }
 
@@ -515,9 +1311,9 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
     const submittedAt = new Date().toISOString();
     const r = await db.run(`
       INSERT INTO stories (
-        title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time, is_breaking, featured, status, editorial_notes, updatedAt, slug, seo_title, meta_description, tags
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [payload.title, payload.category, payload.content, req.user.id, submittedAt, payload.excerpt || payload.content.slice(0, 160), payload.featured_image, payload.reading_time, payload.is_breaking, payload.featured, payload.status, payload.editorial_notes, submittedAt, payload.slug || payload.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), payload.seo_title, payload.meta_description, payload.tags]);
+        title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time, is_breaking, featured, status, editorial_notes, updatedAt, slug, seo_title, meta_description, tags, municipality
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [payload.title, payload.category, payload.content, req.user.id, submittedAt, payload.excerpt || payload.content.slice(0, 160), payload.featured_image, payload.reading_time, payload.is_breaking, payload.featured, payload.status, payload.editorial_notes, submittedAt, payload.slug || payload.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), payload.seo_title, payload.meta_description, payload.tags, payload.municipality]);
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [r.lastID]);
     res.json({ story });
   });
@@ -568,6 +1364,7 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
       ['seo_title', payload.seo_title],
       ['meta_description', payload.meta_description],
       ['tags', payload.tags],
+      ['municipality', payload.municipality],
     ];
     const assignments = fields.map(([column]) => `${column} = ?`).join(', ');
     const values = fields.map(([, value]) => value);
@@ -660,6 +1457,19 @@ app.get('/api/analytics/overview', async (req, res) => {
       },
       analytics
     });
+  });
+});
+
+app.get('/api/contributors/performance', authMiddleware, requireRole('admin', 'editor', 'sub-editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const contributors = await db.all(`SELECT u.id, u.username, u.role, u.bio, COUNT(s.id) as articlesPublished, COALESCE(SUM(s.views),0) as totalViews FROM users u LEFT JOIN stories s ON s.author_id = u.id AND s.status = 'published' WHERE u.role IN ('contributor', 'journalist', 'editor', 'admin', 'sub-editor') GROUP BY u.id ORDER BY totalViews DESC, articlesPublished DESC LIMIT 10`);
+    const summary = {
+      totalContributors: contributors.length,
+      totalPublishedArticles: contributors.reduce((sum, item) => sum + Number(item.articlesPublished || 0), 0),
+      totalViews: contributors.reduce((sum, item) => sum + Number(item.totalViews || 0), 0),
+      topContributor: contributors[0] ? { username: contributors[0].username, views: Number(contributors[0].totalViews || 0) } : null
+    };
+    res.json({ summary, contributors: contributors.map((item) => ({ ...item, articlesPublished: Number(item.articlesPublished || 0), totalViews: Number(item.totalViews || 0) })) });
   });
 });
 
@@ -846,6 +1656,27 @@ app.get('/story/:id', async (req, res) => {
       related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? ORDER BY s.submittedAt DESC LIMIT 3`, [id]);
     }
 
+    let contributorStories = [];
+    if (s.author_id) {
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.author_id = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author_id]);
+    }
+    if (!contributorStories.length && s.author) {
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND lower(COALESCE(u.username, '')) = lower(?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author]);
+    }
+    if (!contributorStories.length) {
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+    }
+
+    const municipalityName = inferMunicipalityFromStory(s);
+    let municipalityStories = [];
+    if (municipalityName) {
+      const municipalityTerm = municipalityName.toLowerCase();
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND (lower(COALESCE(s.municipality, '')) = ? OR lower(COALESCE(s.title, '')) LIKE ? OR lower(COALESCE(s.content, '')) LIKE ?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, municipalityTerm, `%${municipalityTerm}%`, `%${municipalityTerm}%`]);
+    }
+    if (!municipalityStories.length) {
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+    }
+
     const title = s.title || 'Article';
     const excerpt = s.excerpt || (s.content ? s.content.slice(0, 160) : '');
     const image = s.featured_image || '/logo.png';
@@ -883,6 +1714,36 @@ app.get('/story/:id', async (req, res) => {
         </div>
       </div>
     `).join('');
+    const contributorStoriesHtml = contributorStories.length
+      ? contributorStories.map((item) => `
+        <div class="single-related-posts">
+          <div class="related-posts-thumbnail">
+            <a href="/story/${item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+          </div>
+          <div class="cm-post-content">
+            <h3 class="cm-entry-title"><a href="/story/${item.id}">${escapeHtml(item.title)}</a></h3>
+            <div class="cm-below-entry-meta cm-separator-default">
+              <span class="cm-author cm-vcard"><a href="/">${escapeHtml(item.author || 'Mpumalanga Local Time')}</a></span>
+            </div>
+          </div>
+        </div>
+      `).join('')
+      : '<p class="comment-empty">No other stories from this contributor are available yet.</p>';
+    const municipalityStoriesHtml = municipalityStories.length
+      ? municipalityStories.map((item) => `
+        <div class="single-related-posts">
+          <div class="related-posts-thumbnail">
+            <a href="/story/${item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+          </div>
+          <div class="cm-post-content">
+            <h3 class="cm-entry-title"><a href="/story/${item.id}">${escapeHtml(item.title)}</a></h3>
+            <div class="cm-below-entry-meta cm-separator-default">
+              <span class="cm-post-date"><time datetime="${escapeAttr(item.submittedAt || '')}">${escapeHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('en-ZA', { month:'short', day:'numeric' }) : '')}</time></span>
+            </div>
+          </div>
+        </div>
+      `).join('')
+      : '<p class="comment-empty">No nearby municipality coverage is available yet.</p>';
 
     const html = `<!doctype html>
 <html dir="ltr" lang="en-ZA" prefix="og: https://ogp.me/ns#">
@@ -973,6 +1834,7 @@ app.get('/story/:id', async (req, res) => {
     .newsletter-form input { width:100%; min-height:48px; border:1px solid #ddd; border-radius:14px; padding:12px 14px; background:#fff; color:#111; }
     .newsletter-form button { border:none; border-radius:999px; padding:14px 18px; background:#c00; color:#fff; font-size:1rem; cursor:pointer; }
     .article-related { margin-top:0; }
+    .article-related + .article-related { margin-top:18px; }
     .related-posts-wrapper { display:grid; gap:18px; }
     .single-related-posts { display:flex; gap:16px; align-items:flex-start; background:#fafafa; padding:16px; border-radius:12px; }
     .related-posts-thumbnail img { width:140px; height:90px; object-fit:cover; border-radius:8px; }
@@ -1067,6 +1929,14 @@ app.get('/story/:id', async (req, res) => {
                   <h4>You May Also Like</h4>
                   <div class="related-posts-wrapper">${relatedHtml}</div>
                 </div>
+                <div class="article-related widget">
+                  <h4>More by this contributor</h4>
+                  <div class="related-posts-wrapper">${contributorStoriesHtml}</div>
+                </div>
+                <div class="article-related widget">
+                  <h4>From this municipality</h4>
+                  <div class="related-posts-wrapper">${municipalityStoriesHtml}</div>
+                </div>
                 <div class="widget">
                   <h4>Trending stories</h4>
                   ${trending.map((item) => `
@@ -1141,6 +2011,12 @@ app.get('/story/:id', async (req, res) => {
     res.send(html);
   });
 });
+
+function inferMunicipalityFromStory(story = {}) {
+  const text = `${story.title || ''} ${story.content || ''} ${story.excerpt || ''} ${story.municipality || ''}`.toLowerCase();
+  const match = MUNICIPALITIES.find((municipality) => text.includes(municipality.name.toLowerCase()) || text.includes(municipality.slug.toLowerCase()));
+  return match ? match.name : '';
+}
 
 function formatArticleContent(content) {
   const trimmed = String(content || '').trim();

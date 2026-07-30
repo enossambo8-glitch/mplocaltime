@@ -126,6 +126,115 @@ test('municipality route renders a dedicated SEO page', async () => {
   }
 });
 
+test('article page surfaces contributor and municipality recommendations', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/story/1`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /More by this contributor/);
+    assert.match(html, /From this municipality/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('creatives landing page renders the creative portal experience', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/creatives`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /Discover Mpumalanga's Creative Talent/);
+    assert.match(html, /Featured Artists/);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('artist booking endpoint stores a booking', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'reporter', password: 'contributor' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/artists/1/bookings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${loginPayload.token}`,
+      },
+      body: JSON.stringify({ clientName: 'Nokwanda Mokoena', organisation: 'River House', email: 'nokwanda@example.com', phone: '0710000000', eventDate: '2026-09-12', venue: 'Mbombela Hall', budget: 'R12 000', message: 'Please perform at our community launch.' }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.booking && payload.booking.id);
+    assert.equal(payload.booking.artist_id, 1);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('creative organisations and opportunities pages render', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const organisationsResponse = await fetch(`http://127.0.0.1:${address.port}/creatives/organisations`);
+    assert.equal(organisationsResponse.status, 200);
+    const organisationsHtml = await organisationsResponse.text();
+    assert.match(organisationsHtml, /Creative organisations/i);
+
+    const opportunitiesResponse = await fetch(`http://127.0.0.1:${address.port}/creatives/opportunities`);
+    assert.equal(opportunitiesResponse.status, 200);
+    const opportunitiesHtml = await opportunitiesResponse.text();
+    assert.match(opportunitiesHtml, /Creative opportunities/i);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('message endpoint stores a new creative enquiry', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipientId: 1, senderName: 'Nokwanda', senderEmail: 'nokwanda@example.com', subject: 'Booking enquiry', message: 'Would you be available for a launch event?' }),
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.message && payload.message.id);
+    assert.equal(payload.message.recipient_id, 1);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test('breaking news admin endpoint creates a pinned item', async () => {
   await initializeDatabase();
   const server = app.listen(0);
@@ -279,6 +388,34 @@ test('admin notification endpoints create and list notifications', async () => {
     const listPayload = await listResponse.json();
     assert.ok(Array.isArray(listPayload.notifications));
     assert.ok(listPayload.notifications.some((item) => item.title === 'Service update'));
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('contributor performance endpoint returns editorial metrics', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const loginResponse = await fetch(`http://127.0.0.1:${address.port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'changeme' }),
+    });
+    const loginPayload = await loginResponse.json();
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/contributors/performance`, {
+      headers: { Authorization: `Bearer ${loginPayload.token}` },
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.summary);
+    assert.ok(Array.isArray(payload.contributors));
+    assert.equal(typeof payload.summary.totalContributors, 'number');
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

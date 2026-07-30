@@ -28,6 +28,7 @@
         <a href="/">Home</a>
         <a href="/news.html">News</a>
         <a href="/business.html">Business</a>
+        <a href="/creatives">Creatives</a>
         <a href="/arts.html">Arts</a>
         <a href="/sports.html">Sports</a>
         <a href="/community.html">Community</a>
@@ -127,6 +128,13 @@
 
     <section class="card">
       <div class="card-content">
+        <h2>Contributor performance</h2>
+        <div id="contributorPerformance" style="display:grid; gap:12px;"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-content">
         <h2>Your stories</h2>
         <div id="storyArea">
           <p>Loading stories…</p>
@@ -217,6 +225,7 @@
     const notificationForm = document.getElementById('notificationForm');
     const notificationMessage = document.getElementById('notificationMessage');
     const notificationList = document.getElementById('notificationList');
+    const contributorPerformance = document.getElementById('contributorPerformance');
     const logoutButton = document.getElementById('logoutButton');
     const editorAnalytics = document.getElementById('editorAnalytics');
 
@@ -377,6 +386,38 @@
         }
       });
 
+      async function loadContributorPerformance() {
+        if (!contributorPerformance) return;
+        contributorPerformance.innerHTML = '<p>Loading contributor metrics…</p>';
+        try {
+          const response = await fetch('/api/contributors/performance', { headers: { Authorization: 'Bearer ' + token } });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load contributor metrics');
+          const summary = data.summary || {};
+          const contributors = data.contributors || [];
+          contributorPerformance.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+              <div class="card" style="padding:14px;"><strong>${summary.totalContributors || 0}</strong><div>contributors</div></div>
+              <div class="card" style="padding:14px;"><strong>${summary.totalPublishedArticles || 0}</strong><div>articles published</div></div>
+              <div class="card" style="padding:14px;"><strong>${summary.totalViews || 0}</strong><div>total views</div></div>
+              <div class="card" style="padding:14px;"><strong>${summary.topContributor?.username || '—'}</strong><div>top contributor</div></div>
+            </div>
+            <div style="display:grid;gap:10px;margin-top:8px;">
+              ${contributors.map((person) => `
+                <div class="card" style="padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+                  <div>
+                    <strong>${person.username || 'Contributor'}</strong>
+                    <div class="meta">${person.role || 'contributor'} • ${person.articlesPublished || 0} published • ${person.totalViews || 0} views</div>
+                  </div>
+                  <div class="meta">${person.bio || 'Active newsroom contributor'}</div>
+                </div>
+              `).join('')}
+            </div>`;
+        } catch (error) {
+          contributorPerformance.innerHTML = `<p>${error.message}</p>`;
+        }
+      }
+
       async function loadStories() {
         if (!storyArea) return;
         storyArea.innerHTML = '<p>Loading stories…</p>';
@@ -487,6 +528,7 @@
 
       loadProfile();
       loadNotifications();
+      loadContributorPerformance();
       loadStories();
       loadAnalytics();
     }

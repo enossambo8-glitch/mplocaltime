@@ -462,9 +462,11 @@ const app = (() => {
     const stories = await fetchLatestStories();
     const markup = categoryDefinitions.map((category) => {
       const categoryStories = getCategoryStories(stories, category.id, excludedIds);
+      const featuredStory = categoryStories[0] || null;
+      const supportingStories = categoryStories.slice(1, 5);
       return `
         <article class="category-panel ${category.accentClass}" aria-labelledby="${category.id}-title">
-          <div class="category-panel-head">
+          <a class="category-panel-head" href="${category.href}" aria-label="Open ${escapeHTML(category.title)} stories">
             <div class="category-panel-heading">
               <span class="category-icon" aria-hidden="true">${category.icon}</span>
               <div>
@@ -472,35 +474,44 @@ const app = (() => {
                 <p class="category-panel-description">${escapeHTML(category.description)}</p>
               </div>
             </div>
-            <a class="view-all-link" href="${category.href}">View All →</a>
-          </div>
+          </a>
           <div class="category-panel-stories">
-            ${categoryStories.map((story) => `
-              <article class="premium-story-card" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}">
-                <img src="${story.image}" alt="${escapeHTML(story.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw">
-                <div class="premium-story-card-body">
+            ${featuredStory ? `
+              <a class="premium-feature-card" href="/news.html?story=${featuredStory.id}" aria-label="${escapeHTML(featuredStory.title)}">
+                <img src="${featuredStory.image}" alt="${escapeHTML(featuredStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 40vw">
+                <div class="premium-feature-card-body">
                   <div class="premium-topline">
-                    <span class="premium-badge">${escapeHTML(story.category)}</span>
-                    <span class="premium-meta">${escapeHTML(story.date)}</span>
+                    <span class="premium-badge">${escapeHTML(featuredStory.category)}</span>
+                    <span class="premium-meta">${escapeHTML(featuredStory.date)}</span>
                   </div>
-                  <h4>${escapeHTML(story.title)}</h4>
-                  <p>${escapeHTML(story.excerpt)}</p>
+                  <h4>${escapeHTML(featuredStory.title)}</h4>
+                  <p>${escapeHTML(featuredStory.excerpt)}</p>
                   <div class="premium-story-footer">
                     <div class="premium-story-details">
-                      <span>By ${escapeHTML(story.author)}</span>
-                      <span>${story.readingTime} min</span>
-                      <span>${story.views || 0} views</span>
-                      <span>${story.comments || 0} comments</span>
-                    </div>
-                    <div class="premium-story-actions">
-                      <button class="action-chip" type="button" data-share aria-label="Share ${escapeHTML(story.title)}" data-url="${window.location.href}">↗</button>
-                      <button class="action-chip" type="button" aria-label="Bookmark ${escapeHTML(story.title)}">🔖</button>
-                      <a class="read-more-link" href="/story/${story.id}">Read more</a>
+                      <span>By ${escapeHTML(featuredStory.author)}</span>
+                      <span>${featuredStory.readingTime} min</span>
+                      <span>${featuredStory.views || 0} views</span>
+                      <span>${featuredStory.comments || 0} comments</span>
                     </div>
                   </div>
                 </div>
-              </article>
-            `).join('')}
+              </a>
+            ` : ''}
+            <div class="premium-supporting-grid">
+              ${supportingStories.map((story) => `
+                <a class="premium-story-card" href="/news.html?story=${story.id}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
+                  <img src="${story.image}" alt="${escapeHTML(story.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw">
+                  <div class="premium-story-card-body">
+                    <div class="premium-topline">
+                      <span class="premium-badge">${escapeHTML(story.category)}</span>
+                      <span class="premium-meta">${escapeHTML(story.date)}</span>
+                    </div>
+                    <h4>${escapeHTML(story.title)}</h4>
+                    <p>${escapeHTML(story.excerpt)}</p>
+                  </div>
+                </a>
+              `).join('')}
+            </div>
           </div>
         </article>
       `;
