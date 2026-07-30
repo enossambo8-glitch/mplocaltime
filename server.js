@@ -1208,7 +1208,25 @@ app.get('/api/creatives/search', async (req, res) => {
   const query = String(req.query.q || '').trim().toLowerCase();
   return withDB(async (db) => {
     const artists = await db.all(`SELECT * FROM artists WHERE lower(COALESCE(full_name, '')) LIKE ? OR lower(COALESCE(stage_name, '')) LIKE ? OR lower(COALESCE(discipline, '')) LIKE ? OR lower(COALESCE(municipality, '')) LIKE ? ORDER BY followers_count DESC LIMIT 12`, [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`]);
-    res.json({ artists });
+    const organisations = await db.all(`SELECT * FROM creative_organisations WHERE lower(COALESCE(name, '')) LIKE ? OR lower(COALESCE(category, '')) LIKE ? OR lower(COALESCE(municipality, '')) LIKE ? ORDER BY featured DESC, created_at DESC LIMIT 12`, [`%${query}%`, `%${query}%`, `%${query}%`]);
+    const venues = await db.all(`SELECT * FROM venues WHERE lower(COALESCE(name, '')) LIKE ? OR lower(COALESCE(category, '')) LIKE ? OR lower(COALESCE(municipality, '')) LIKE ? ORDER BY featured DESC, created_at DESC LIMIT 12`, [`%${query}%`, `%${query}%`, `%${query}%`]);
+    res.json({ artists, organisations, venues });
+  });
+});
+
+app.get('/api/creatives/overview', async (req, res) => {
+  return withDB(async (db) => {
+    const organisations = await db.all(`SELECT * FROM creative_organisations ORDER BY featured DESC, created_at DESC LIMIT 4`);
+    const venues = await db.all(`SELECT * FROM venues ORDER BY featured DESC, created_at DESC LIMIT 4`);
+    const events = await db.all(`SELECT * FROM events ORDER BY featured DESC, start_date DESC LIMIT 4`);
+    const opportunities = await db.all(`SELECT * FROM opportunities ORDER BY featured DESC, deadline ASC LIMIT 4`);
+    const overview = {
+      organisations: organisations.length,
+      venues: venues.length,
+      events: events.length,
+      opportunities: opportunities.length,
+    };
+    res.json({ overview, organisations, venues, events, opportunities });
   });
 });
 

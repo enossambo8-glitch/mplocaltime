@@ -235,6 +235,44 @@ test('message endpoint stores a new creative enquiry', async () => {
   }
 });
 
+test('creative overview endpoint returns organisation and venue counts', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/creatives/overview`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(payload.overview);
+    assert.equal(typeof payload.overview.organisations, 'number');
+    assert.equal(typeof payload.overview.venues, 'number');
+    assert.ok(Array.isArray(payload.organisations));
+    assert.ok(Array.isArray(payload.venues));
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('creative search returns artists, organisations and venues', async () => {
+  await initializeDatabase();
+  const server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/creatives/search?q=mbombela`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.ok(Array.isArray(payload.artists));
+    assert.ok(Array.isArray(payload.organisations));
+    assert.ok(Array.isArray(payload.venues));
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test('breaking news admin endpoint creates a pinned item', async () => {
   await initializeDatabase();
   const server = app.listen(0);

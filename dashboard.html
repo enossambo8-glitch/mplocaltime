@@ -144,6 +144,13 @@
 
     <section class="card">
       <div class="card-content">
+        <h2>Creatives overview</h2>
+        <div id="creativeOverview" style="display:grid; gap:12px;"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-content">
         <h2>Analytics snapshot</h2>
         <div id="analyticsArea">
           <p>Loading analytics…</p>
@@ -226,6 +233,7 @@
     const notificationMessage = document.getElementById('notificationMessage');
     const notificationList = document.getElementById('notificationList');
     const contributorPerformance = document.getElementById('contributorPerformance');
+    const creativeOverview = document.getElementById('creativeOverview');
     const logoutButton = document.getElementById('logoutButton');
     const editorAnalytics = document.getElementById('editorAnalytics');
 
@@ -277,6 +285,30 @@
           profileStats.innerHTML = `<strong>${userData.username}</strong> • ${userData.role || 'user'} • ${userData.storyCount || 0} stories • ${userData.totalViews || 0} total views`;
         } catch (err) {
           profileStats.innerHTML = '<p>Unable to load profile right now.</p>';
+        }
+      }
+
+      async function loadCreativeOverview() {
+        if (!creativeOverview) return;
+        creativeOverview.innerHTML = '<p>Loading creative directory…</p>';
+        try {
+          const response = await fetch('/api/creatives/overview');
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load creative overview');
+          const overview = data.overview || {};
+          creativeOverview.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+              <div class="card" style="padding:14px;"><strong>${overview.organisations || 0}</strong><div>organisations</div></div>
+              <div class="card" style="padding:14px;"><strong>${overview.venues || 0}</strong><div>venues</div></div>
+              <div class="card" style="padding:14px;"><strong>${overview.events || 0}</strong><div>events</div></div>
+              <div class="card" style="padding:14px;"><strong>${overview.opportunities || 0}</strong><div>opportunities</div></div>
+            </div>
+            <div style="display:grid;gap:10px;margin-top:8px;">
+              ${(data.organisations || []).map((item) => `<div class="card" style="padding:14px;"><strong>${item.name || item.title}</strong><div class="meta">${item.category || 'Creative'} • ${item.municipality || 'Mpumalanga'}</div></div>`).join('')}
+              ${(data.venues || []).map((item) => `<div class="card" style="padding:14px;"><strong>${item.name || item.title}</strong><div class="meta">${item.category || 'Venue'} • ${item.city || item.municipality || 'Mpumalanga'}</div></div>`).join('')}
+            </div>`;
+        } catch (error) {
+          creativeOverview.innerHTML = `<p>${error.message}</p>`;
         }
       }
 
@@ -530,6 +562,7 @@
       loadNotifications();
       loadContributorPerformance();
       loadStories();
+      loadCreativeOverview();
       loadAnalytics();
     }
   </script>
