@@ -1,5 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 
+const DATABASE_PATH = process.env.DB_PATH || './data.db';
+
 function wrap(db) {
   return {
     run: (sql, params=[]) => new Promise((res, rej) => db.run(sql, params, function(err) { if (err) rej(err); else res(this); })),
@@ -11,10 +13,10 @@ function wrap(db) {
 }
 
 async function init() {
-  const raw = new sqlite3.Database('./data.db');
+  const raw = new sqlite3.Database(DATABASE_PATH);
   const db = wrap(raw);
   await db.exec('PRAGMA foreign_keys = ON;');
   return db;
 }
 
-module.exports = { init };
+module.exports = { init, DATABASE_PATH };

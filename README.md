@@ -9,11 +9,11 @@ cp .env.example .env
 # then edit .env and set JWT_SECRET, INITIAL_PASSWORD, INITIAL_USER_PASSWORD and VERCEL_TOKEN
 ```
 
-Default seeded accounts:
-- admin / changeme (admin)
-- reporter / contributor (user)
-
-You can override the default passwords with `INITIAL_PASSWORD` and `INITIAL_USER_PASSWORD`.
+Important security note:
+- No production defaults are shipped in this repository.
+- `JWT_SECRET`, `INITIAL_PASSWORD`, and `INITIAL_USER_PASSWORD` must be set explicitly in the environment before the app starts.
+- Do not use predictable demo credentials in production or leave them in committed files.
+- Seed/demo accounts are for local testing only and are not a substitute for production secrets.
 
 2. Deploy to Vercel:
 

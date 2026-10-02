@@ -73,12 +73,18 @@
           mediaGrid.innerHTML = '<p>No assets uploaded yet.</p>';
           return;
         }
+        const escapeHtml = (value = '') => String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\"/g, '&quot;')
+          .replace(/'/g, '&#39;');
         mediaGrid.innerHTML = items.map((item) => `
           <div class="card" style="margin-bottom:12px;">
             <div class="card-content">
-              <strong>${item.original_name || item.stored_name}</strong>
-              <p>${item.caption || 'Untitled asset'} • ${item.mime_type || 'file'} • ${item.size || 0} bytes</p>
-              <a href="${item.url}" target="_blank" rel="noopener">Open asset</a>
+              <strong>${escapeHtml(item.original_name || item.stored_name)}</strong>
+              <p>${escapeHtml(item.caption || 'Untitled asset')} • ${escapeHtml(item.mime_type || 'file')} • ${escapeHtml(item.size || 0)} bytes</p>
+              <a href="${escapeHtml(item.url || '#')}" target="_blank" rel="noopener">Open asset</a>
             </div>
           </div>
         `).join('');
@@ -115,7 +121,23 @@
       }
     });
 
-    adminStatus.textContent = token ? 'Editorial tools are ready.' : 'Please sign in to unlock control panel actions.';
+    async function loadAdminSession() {
+      if (!token) {
+        adminStatus.textContent = 'Please sign in to unlock control panel actions.';
+        return;
+      }
+      try {
+        const response = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Unable to load profile');
+        const role = payload.user?.role || 'user';
+        adminStatus.textContent = `Signed in as ${payload.user?.username || 'editor'} (${role}). Editorial tools are ready.`;
+      } catch (error) {
+        adminStatus.textContent = 'Please sign in to unlock control panel actions.';
+      }
+    }
+
+    loadAdminSession();
     loadMedia();
   </script>
 </body>

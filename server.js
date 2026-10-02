@@ -1,11 +1,15 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const sanitizeHtml = require('sanitize-html');
 const { init } = require('./db');
 const {
   MUNICIPALITIES,
@@ -15,19 +19,74 @@ const {
   buildMunicipalityListHtml,
 } = require('./municipality-page');
 
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is required and must be set in the environment before starting the server.');
+}
+
+const INITIAL_PASSWORD = process.env.INITIAL_PASSWORD || '';
+const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
+const SEED_DEMO_USERS = Boolean(INITIAL_PASSWORD && INITIAL_USER_PASSWORD);
+const CANONICAL_ROLES = ['admin', 'editor', 'journalist', 'contributor', 'user'];
+const ROLE_ALIASES = {
+  admin: 'admin',
+  editor: 'editor',
+  'sub-editor': 'editor',
+  'managing-editor': 'editor',
+  'assistant-editor': 'editor',
+  journalist: 'journalist',
+  reporter: 'journalist',
+  author: 'contributor',
+  contributor: 'contributor',
+  writer: 'contributor',
+  user: 'user',
+  reader: 'user'
+};
+
+function normalizeRoleName(value, fallback = 'user') {
+  const raw = String(value ?? fallback).trim().toLowerCase();
+  if (!raw) return fallback;
+  if (ROLE_ALIASES[raw]) return ROLE_ALIASES[raw];
+  return CANONICAL_ROLES.includes(raw) ? raw : fallback;
+}
+
+function parseCanonicalRole(value, { allowDefaultUser = true, fallback = 'user' } = {}) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return allowDefaultUser ? fallback : null;
+  const candidate = ROLE_ALIASES[raw] ?? raw;
+  if (!CANONICAL_ROLES.includes(candidate)) return null;
+  return candidate;
+}
+
+function isActiveAccount(value) {
+  const numeric = Number(value ?? 1);
+  return String(value ?? '1') === '0' || numeric === 0 || value === false ? false : true;
+}
+
+function safeUserObject(user = {}) {
+  return {
+    id: Number(user.id),
+    username: String(user.username || ''),
+    role: normalizeRoleName(user.role, 'user'),
+    bio: String(user.bio || ''),
+    avatar: String(user.avatar || '/logo.png'),
+    is_active: isActiveAccount(user.is_active),
+  };
+}
+
 const DEFAULT_ADMIN = {
   username: 'admin',
-  passwordEnv: process.env.INITIAL_PASSWORD || 'changeme',
+  passwordEnv: INITIAL_PASSWORD,
   bio: 'Publisher and managing editor of Mpumalanga Local Time.',
   avatar: '/logo.png',
   role: 'admin'
 };
 const DEFAULT_USER = {
   username: 'reporter',
-  passwordEnv: process.env.INITIAL_USER_PASSWORD || 'contributor',
+  passwordEnv: INITIAL_USER_PASSWORD,
   bio: 'Contributor covering local stories across Mpumalanga.',
   avatar: '/logo.png',
-  role: 'user'
+  role: 'journalist'
 };
 
 async function initializeDatabase() {
@@ -40,7 +99,8 @@ async function initializeDatabase() {
         password TEXT NOT NULL,
         bio TEXT,
         avatar TEXT,
-        role TEXT NOT NULL DEFAULT 'user'
+        role TEXT NOT NULL DEFAULT 'user',
+        is_active INTEGER NOT NULL DEFAULT 1
       );
       CREATE TABLE IF NOT EXISTS stories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -352,6 +412,20 @@ async function initializeDatabase() {
     } else {
       await db.run(`UPDATE users SET role = 'user' WHERE role IS NULL`);
     }
+    if (!columnNames.includes('is_active')) {
+      await db.run(`ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`);
+      await db.run(`UPDATE users SET is_active = 1 WHERE is_active IS NULL`);
+    } else {
+      await db.run(`UPDATE users SET is_active = 1 WHERE is_active IS NULL`);
+    }
+
+    const legacyUsers = await db.all(`SELECT id, role FROM users`);
+    for (const user of legacyUsers) {
+      const normalized = normalizeRoleName(user.role, 'user');
+      if (normalized !== String(user.role || '').trim().toLowerCase()) {
+        await db.run(`UPDATE users SET role = ? WHERE id = ?`, [normalized, user.id]);
+      }
+    }
 
     const storyColumns = await db.all('PRAGMA table_info(stories)');
     const storyColumnNames = storyColumns.map((column) => column.name);
@@ -466,20 +540,30 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN status TEXT DEFAULT "active"');
     }
 
-    const existingAdmin = await db.get(`SELECT id, role FROM users WHERE username = ?`, [DEFAULT_ADMIN.username]);
-    if (!existingAdmin) {
-      const hash = await bcrypt.hash(DEFAULT_ADMIN.passwordEnv, 10);
-      await db.run(`INSERT INTO users (username, password, bio, avatar, role) VALUES (?, ?, ?, ?, ?)`, [DEFAULT_ADMIN.username, hash, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role]);
-    } else if ((existingAdmin.role || '').toLowerCase() !== DEFAULT_ADMIN.role.toLowerCase()) {
-      await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ? WHERE username = ?`, [DEFAULT_ADMIN.role, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.username]);
+    if (process.env.NODE_ENV === 'production' && !SEED_DEMO_USERS) {
+      throw new Error('Production startup requires INITIAL_PASSWORD and INITIAL_USER_PASSWORD to be configured.');
     }
 
-    const existingReporter = await db.get(`SELECT id, role FROM users WHERE username = ?`, [DEFAULT_USER.username]);
-    if (!existingReporter) {
-      const hash = await bcrypt.hash(DEFAULT_USER.passwordEnv, 10);
-      await db.run(`INSERT INTO users (username, password, bio, avatar, role) VALUES (?, ?, ?, ?, ?)`, [DEFAULT_USER.username, hash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
-    } else if ((existingReporter.role || '').toLowerCase() !== DEFAULT_USER.role.toLowerCase()) {
-      await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ? WHERE username = ?`, [DEFAULT_USER.role, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.username]);
+    if (SEED_DEMO_USERS) {
+      const existingAdmin = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_ADMIN.username]);
+      if (!existingAdmin) {
+        const hash = await bcrypt.hash(DEFAULT_ADMIN.passwordEnv, 10);
+        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_ADMIN.username, hash, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role]);
+      } else {
+        const normalizedAdminRole = normalizeRoleName(existingAdmin.role, 'admin');
+        await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [normalizedAdminRole, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, Number(existingAdmin.is_active ?? 1), DEFAULT_ADMIN.username]);
+      }
+
+      const existingReporter = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_USER.username]);
+      if (!existingReporter) {
+        const hash = await bcrypt.hash(DEFAULT_USER.passwordEnv, 10);
+        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_USER.username, hash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
+      } else {
+        const normalizedReporterRole = normalizeRoleName(existingReporter.role, 'journalist');
+        await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [normalizedReporterRole, DEFAULT_USER.bio, DEFAULT_USER.avatar, Number(existingReporter.is_active ?? 1), DEFAULT_USER.username]);
+      }
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.warn('Skipping default demo user seeding because credentials are not configured.');
     }
 
     const existingArtists = await db.get(`SELECT id FROM artists LIMIT 1`);
@@ -672,17 +756,74 @@ async function initializeDatabase() {
   }
 }
 
-const SECRET = process.env.JWT_SECRET || 'dev-secret-change-this';
+const SECRET = JWT_SECRET;
 const app = express();
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-const upload = multer({ dest: uploadsDir });
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, '/')));
-app.use(express.static(path.join(__dirname, '/public')));
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts. Please try again later.' } });
+const publicFormLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 25, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests. Please slow down and try again later.' } });
+const allowedOrigins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000', 'https://mplocaltime.co.za', 'https://www.mplocaltime.co.za']);
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const safeBase = crypto.randomBytes(12).toString('hex');
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      cb(null, `${safeBase}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+    const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    const ext = path.extname(String(file.originalname || '')).toLowerCase();
+    if (!allowedMimeTypes.has(mimeType) || !allowedExtensions.has(ext)) {
+      return cb(new Error('Only JPG, PNG, WEBP, and GIF image uploads are allowed.'));
+    }
+    cb(null, true);
+  }
+});
+const ALLOWED_HTML_PAGES = new Set(fs.readdirSync(__dirname).filter((entry) => entry.endsWith('.html')).map((entry) => entry.toLowerCase()));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  crossOriginResourcePolicy: { policy: 'same-site' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  frameguard: { action: 'deny' },
+  noSniff: true,
+  hsts: process.env.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false
+}));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+}));
+app.use(express.json({ limit: '1mb' }));
+app.use('/public', express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), { index: false, redirect: false }));
 
 // Serve index.html for root
 app.get('/', (req, res) => {
@@ -1496,7 +1637,7 @@ app.post('/api/artists/me', authMiddleware, async (req, res) => {
   });
 });
 
-app.post('/api/artists/:id/bookings', async (req, res) => {
+app.post('/api/artists/:id/bookings', publicFormLimiter, async (req, res) => {
   const artistId = Number(req.params.id);
   if (!artistId) return res.status(400).json({ error: 'artist id required' });
   const { clientName, organisation, email, phone, eventDate, venue, budget, message } = req.body || {};
@@ -1511,24 +1652,97 @@ app.post('/api/artists/:id/bookings', async (req, res) => {
   });
 });
 
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages', publicFormLimiter, async (req, res) => {
   const { recipientId, senderName, senderEmail, subject, message } = req.body || {};
   if (!recipientId || !senderName || !senderEmail || !message) return res.status(400).json({ error: 'recipient, sender name, sender email and message are required' });
+  const safeName = String(senderName || '').trim().slice(0, 120);
+  const safeEmail = String(senderEmail || '').trim().slice(0, 200);
+  const safeSubject = String(subject || 'Creative enquiry').trim().slice(0, 200);
+  const safeMessage = String(message || '').trim().slice(0, 4000);
+  if (!safeName || !safeEmail || !safeMessage || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail)) {
+    return res.status(400).json({ error: 'valid sender name, sender email and message are required' });
+  }
   return withDB(async (db) => {
-    const row = await db.run(`INSERT INTO messages (recipient_id, sender_name, sender_email, subject, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)`, [recipientId, senderName, senderEmail, subject || 'Creative enquiry', message, new Date().toISOString(), new Date().toISOString()]);
+    const row = await db.run(`INSERT INTO messages (recipient_id, sender_name, sender_email, subject, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)`, [recipientId, safeName, safeEmail, safeSubject, safeMessage, new Date().toISOString(), new Date().toISOString()]);
     const item = await db.get(`SELECT * FROM messages WHERE id = ?`, [row.lastID]);
     res.json({ message: item });
   });
 });
 
-app.get('/api/messages', async (req, res) => {
+app.get('/api/messages', authMiddleware, requireRole('admin'), async (req, res) => {
   return withDB(async (db) => {
-    const messages = await db.all(`SELECT * FROM messages ORDER BY created_at DESC LIMIT 20`);
+    const messages = await db.all(`SELECT id, recipient_id, subject, status, created_at, updated_at FROM messages ORDER BY created_at DESC LIMIT 20`);
     res.json({ messages });
   });
 });
 
-app.post('/api/artists/:id/reviews', async (req, res) => {
+app.get('/api/admin/users', authMiddleware, requireRole('admin'), async (req, res) => {
+  return withDB(async (db) => {
+    const users = await db.all(`SELECT id, username, bio, avatar, role, is_active FROM users ORDER BY username ASC`);
+    res.json({ users: users.map((user) => safeUserObject(user)) });
+  });
+});
+
+app.get('/api/admin/users/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) return res.status(400).json({ error: 'user id required' });
+  return withDB(async (db) => {
+    const user = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [userId]);
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    const storyCount = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE author_id = ?`, [userId]);
+    const views = await db.get(`SELECT COALESCE(SUM(views),0) as total FROM stories WHERE author_id = ?`, [userId]);
+    res.json({ user: { ...safeUserObject(user), storyCount: Number(storyCount?.cnt || 0), totalViews: Number(views?.total || 0) } });
+  });
+});
+
+app.patch('/api/admin/users/:id/role', authMiddleware, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.id);
+  const requestedRole = parseCanonicalRole(req.body?.role, { allowDefaultUser: false, fallback: 'user' });
+  if (!userId) return res.status(400).json({ error: 'user id required' });
+  if (!requestedRole) return res.status(400).json({ error: 'invalid role' });
+
+  return withDB(async (db) => {
+    const user = await db.get(`SELECT id, username, role, is_active FROM users WHERE id = ?`, [userId]);
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    const currentRole = normalizeRoleName(user.role, 'user');
+    if (currentRole === 'admin' && Number(user.id) === Number(req.user.id) && requestedRole !== 'admin') {
+      return res.status(403).json({ error: 'administrators cannot demote themselves' });
+    }
+    const adminCount = await db.get(`SELECT COUNT(*) as cnt FROM users WHERE role = ? AND is_active != 0`, ['admin']);
+    if (currentRole === 'admin' && Number(adminCount?.cnt || 0) <= 1 && requestedRole !== 'admin') {
+      return res.status(403).json({ error: 'at least one active administrator must remain' });
+    }
+    await db.run(`UPDATE users SET role = ? WHERE id = ?`, [requestedRole, userId]);
+    const updatedUser = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [userId]);
+    res.json({ user: safeUserObject(updatedUser) });
+  });
+});
+
+app.patch('/api/admin/users/:id/status', authMiddleware, requireRole('admin'), async (req, res) => {
+  const userId = Number(req.params.id);
+  const rawStatus = req.body?.is_active ?? req.body?.active;
+  if (!userId) return res.status(400).json({ error: 'user id required' });
+  const nextActive = rawStatus === undefined ? undefined : rawStatus === true || rawStatus === 1 || rawStatus === '1' || rawStatus === 'true';
+  if (nextActive === undefined) return res.status(400).json({ error: 'active status required' });
+
+  return withDB(async (db) => {
+    const user = await db.get(`SELECT id, username, role, is_active FROM users WHERE id = ?`, [userId]);
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    const currentRole = normalizeRoleName(user.role, 'user');
+    const adminCount = await db.get(`SELECT COUNT(*) as cnt FROM users WHERE role = ? AND is_active != 0`, ['admin']);
+    if (currentRole === 'admin' && Number(user.id) === Number(req.user.id) && !nextActive) {
+      return res.status(403).json({ error: 'administrators cannot deactivate their own account' });
+    }
+    if (currentRole === 'admin' && Number(adminCount?.cnt || 0) <= 1 && !nextActive) {
+      return res.status(403).json({ error: 'at least one active administrator must remain' });
+    }
+    await db.run(`UPDATE users SET is_active = ? WHERE id = ?`, [nextActive ? 1 : 0, userId]);
+    const updatedUser = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [userId]);
+    res.json({ user: safeUserObject(updatedUser) });
+  });
+});
+
+app.post('/api/artists/:id/reviews', publicFormLimiter, async (req, res) => {
   const artistId = Number(req.params.id);
   const { reviewerName, rating, comment, verifiedBooking } = req.body || {};
   if (!artistId || !reviewerName) return res.status(400).json({ error: 'reviewer name required' });
@@ -1570,9 +1784,14 @@ app.get('/api/creatives/overview', async (req, res) => {
 
 app.get('/:page', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
-  const file = path.join(__dirname, req.path + '.html');
-  if (fs.existsSync(file)) {
-    return res.sendFile(file);
+  const page = req.params.page || '';
+  if (!page || page.startsWith('.') || page.includes('/') || page.includes('\\')) {
+    return next();
+  }
+  const cleanPage = page.toLowerCase();
+  const safeFile = cleanPage.endsWith('.html') ? cleanPage : `${cleanPage}.html`;
+  if (ALLOWED_HTML_PAGES.has(safeFile)) {
+    return res.sendFile(path.join(__dirname, safeFile));
   }
   next();
 });
@@ -1586,43 +1805,76 @@ async function withDB(fn) {
   }
 }
 
-app.post('/api/login', async (req, res) => {
+function sanitizeUsername(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!/^[a-zA-Z0-9._-]{3,80}$/.test(value)) return '';
+  return value;
+}
+
+app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  const safeUsername = sanitizeUsername(username);
+  const safePassword = String(password).trim();
+  if (!safeUsername || !safePassword || safePassword.length < 8) return res.status(400).json({ error: 'username and password required' });
   return withDB(async (db) => {
-    const user = await db.get(`SELECT * FROM users WHERE username = ?`, [username]);
+    const user = await db.get(`SELECT * FROM users WHERE username = ?`, [safeUsername]);
     if (!user) return res.status(401).json({ error: 'invalid credentials' });
-    const ok = await bcrypt.compare(password, user.password);
+    const ok = await bcrypt.compare(safePassword, user.password);
     if (!ok) return res.status(401).json({ error: 'invalid credentials' });
-    const role = user.role || 'user';
+    if (!isActiveAccount(user.is_active)) return res.status(403).json({ error: 'account inactive' });
+    const role = normalizeRoleName(user.role, 'user');
     const token = jwt.sign({ id: user.id, username: user.username, role }, SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role });
   });
 });
 
-// registration endpoint
-app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body || {};
+app.post('/api/register', loginLimiter, async (req, res) => {
+  const { username, password, role } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  const safeUsername = sanitizeUsername(username);
+  const safePassword = String(password).trim();
+  if (!safeUsername || !safePassword || safePassword.length < 8) return res.status(400).json({ error: 'username and password required' });
+  if (role !== undefined && role !== null) {
+    const requestedRole = parseCanonicalRole(role, { allowDefaultUser: true, fallback: 'user' });
+    if (requestedRole !== 'user') {
+      return res.status(400).json({ error: 'public registration only creates standard user accounts' });
+    }
+  }
   return withDB(async (db) => {
-    const exists = await db.get(`SELECT id FROM users WHERE username = ?`, [username]);
+    const exists = await db.get(`SELECT id FROM users WHERE username = ?`, [safeUsername]);
     if (exists) return res.status(409).json({ error: 'username taken' });
-    const hash = await bcrypt.hash(password, 10);
-    const r = await db.run(`INSERT INTO users (username, password, role) VALUES (?,?,?)`, [username, hash, 'user']);
+    const hash = await bcrypt.hash(safePassword, 10);
+    const r = await db.run(`INSERT INTO users (username, password, role, is_active) VALUES (?,?,?,1)`, [safeUsername, hash, 'user']);
     const user = await db.get(`SELECT id, username, role FROM users WHERE id = ?`, [r.lastID]);
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role || 'user' }, SECRET, { expiresIn: '7d' });
-    res.json({ token, username: user.username, role: user.role || 'user' });
+    const roleName = normalizeRoleName(user.role, 'user');
+    const token = jwt.sign({ id: user.id, username: user.username, role: roleName }, SECRET, { expiresIn: '7d' });
+    res.json({ token, username: user.username, role: roleName });
   });
 });
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const h = req.headers.authorization || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (!m) return res.status(401).json({ error: 'missing token' });
   try {
     const data = jwt.verify(m[1], SECRET);
-    req.user = data;
-    next();
+    const userId = Number(data?.id || 0);
+    if (!userId) return res.status(401).json({ error: 'invalid token' });
+    return withDB(async (db) => {
+      const user = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [userId]);
+      if (!user) return res.status(401).json({ error: 'invalid token' });
+      if (!isActiveAccount(user.is_active)) return res.status(403).json({ error: 'account inactive' });
+      req.user = {
+        id: Number(user.id),
+        username: user.username,
+        role: normalizeRoleName(user.role, 'user'),
+        bio: user.bio || '',
+        avatar: user.avatar || '/logo.png',
+        is_active: isActiveAccount(user.is_active),
+      };
+      next();
+    });
   } catch (e) {
     return res.status(401).json({ error: 'invalid token' });
   }
@@ -1630,11 +1882,25 @@ function authMiddleware(req, res, next) {
 
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    const role = String(req.user?.role || 'user').toLowerCase();
-    if (!allowedRoles.map((entry) => entry.toLowerCase()).includes(role)) {
+    const role = normalizeRoleName(req.user?.role || 'user', 'user');
+    const permittedRoles = allowedRoles.map((entry) => normalizeRoleName(entry, 'user'));
+    if (!permittedRoles.includes(role)) {
       return res.status(403).json({ error: 'insufficient permissions' });
     }
     next();
+  };
+}
+
+function requireOwnershipOrRole(resourceOwnerId, ...allowedRoles) {
+  return (req, res, next) => {
+    const userId = Number(req.user?.id || 0);
+    const ownerId = Number(resourceOwnerId(req) ?? 0);
+    const role = normalizeRoleName(req.user?.role || 'user', 'user');
+    const permittedRoles = allowedRoles.map((entry) => normalizeRoleName(entry, 'user'));
+    if (permittedRoles.includes(role) || (userId > 0 && ownerId > 0 && userId === ownerId)) {
+      return next();
+    }
+    return res.status(403).json({ error: 'insufficient permissions' });
   };
 }
 
@@ -1642,21 +1908,32 @@ function normalizeStoryPayload(payload = {}) {
   const status = String(payload.status || 'draft').trim().toLowerCase();
   const safeStatus = ['draft', 'pending-review', 'fact-check', 'approved', 'published', 'scheduled', 'archived', 'needs-changes', 'rejected'].includes(status) ? status : 'draft';
   return {
-    title: payload.title || '',
-    category: payload.category || 'News',
-    content: payload.content || '',
-    excerpt: payload.excerpt || '',
-    featured_image: payload.featured_image || '',
+    title: sanitizeTextInput(payload.title || '', '').slice(0, 180),
+    category: sanitizeTextInput(payload.category || 'News', 'News').slice(0, 80),
+    content: sanitizeHtml(String(payload.content || ''), {
+      allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'img', 'figure', 'figcaption', 'span', 'code', 'pre'],
+      allowedAttributes: {
+        a: ['href', 'target', 'rel', 'title'],
+        img: ['src', 'alt', 'title'],
+        '*': ['class']
+      },
+      allowedSchemes: ['http', 'https', 'mailto'],
+      transformTags: {
+        a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' })
+      }
+    }).slice(0, 200000),
+    excerpt: sanitizeTextInput(payload.excerpt || '', '').slice(0, 260),
+    featured_image: sanitizeTextInput(payload.featured_image || '', '').slice(0, 500),
     reading_time: Number(payload.reading_time || payload.readingTime || 5),
     is_breaking: payload.is_breaking === 1 || payload.is_breaking === true || payload.is_breaking === '1' ? 1 : 0,
     featured: payload.featured === 1 || payload.featured === true || payload.featured === '1' ? 1 : 0,
     status: safeStatus,
-    editorial_notes: payload.editorial_notes || payload.editorialNotes || '',
-    slug: payload.slug || '',
-    seo_title: payload.seo_title || payload.seoTitle || '',
-    meta_description: payload.meta_description || payload.metaDescription || '',
-    tags: payload.tags || '',
-    municipality: payload.municipality || '',
+    editorial_notes: sanitizeTextInput(payload.editorial_notes || payload.editorialNotes || '', '').slice(0, 2000),
+    slug: sanitizeTextInput(payload.slug || '', '').slice(0, 180),
+    seo_title: sanitizeTextInput(payload.seo_title || payload.seoTitle || '', '').slice(0, 180),
+    meta_description: sanitizeTextInput(payload.meta_description || payload.metaDescription || '', '').slice(0, 250),
+    tags: sanitizeTextInput(payload.tags || '', '').slice(0, 500),
+    municipality: sanitizeTextInput(payload.municipality || '', '').slice(0, 120),
   };
 }
 
@@ -1727,11 +2004,20 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
   if (!payload.title || !payload.content) return res.status(400).json({ error: 'title and content required' });
   return withDB(async (db) => {
     const submittedAt = new Date().toISOString();
+    const role = String(req.user?.role || 'user').toLowerCase();
+    const isEditorial = ['admin', 'editor', 'managing-editor', 'sub-editor', 'journalist'].includes(role);
+    const safePayload = {
+      ...payload,
+      featured: isEditorial ? payload.featured : 0,
+      is_breaking: isEditorial ? payload.is_breaking : 0,
+      status: isEditorial ? payload.status : 'draft',
+      editorial_notes: isEditorial ? payload.editorial_notes : ''
+    };
     const r = await db.run(`
       INSERT INTO stories (
         title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time, is_breaking, featured, status, editorial_notes, updatedAt, slug, seo_title, meta_description, tags, municipality
       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [payload.title, payload.category, payload.content, req.user.id, submittedAt, payload.excerpt || payload.content.slice(0, 160), payload.featured_image, payload.reading_time, payload.is_breaking, payload.featured, payload.status, payload.editorial_notes, submittedAt, payload.slug || payload.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), payload.seo_title, payload.meta_description, payload.tags, payload.municipality]);
+    `, [safePayload.title, safePayload.category, safePayload.content, req.user.id, submittedAt, safePayload.excerpt || safePayload.content.slice(0, 160), safePayload.featured_image, safePayload.reading_time, safePayload.is_breaking, safePayload.featured, safePayload.status, safePayload.editorial_notes, submittedAt, safePayload.slug || safePayload.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), safePayload.seo_title, safePayload.meta_description, safePayload.tags, safePayload.municipality]);
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [r.lastID]);
     res.json({ story });
   });
@@ -1767,22 +2053,22 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
     }
     const updatedAt = new Date().toISOString();
     const fields = [
-      ['title', payload.title],
-      ['category', payload.category],
-      ['content', payload.content],
-      ['excerpt', payload.excerpt || payload.content.slice(0, 160)],
-      ['featured_image', payload.featured_image],
-      ['reading_time', payload.reading_time],
-      ['is_breaking', payload.is_breaking],
-      ['featured', payload.featured],
-      ['status', payload.status],
-      ['editorial_notes', payload.editorial_notes],
+      ['title', payload.title || existing.title],
+      ['category', payload.category || existing.category || 'News'],
+      ['content', payload.content || existing.content],
+      ['excerpt', payload.excerpt || (payload.content || existing.content || '').slice(0, 160)],
+      ['featured_image', payload.featured_image || existing.featured_image || ''],
+      ['reading_time', Number(payload.reading_time || existing.reading_time || 5)],
+      ['is_breaking', isEditorial ? payload.is_breaking : Number(existing.is_breaking || 0)],
+      ['featured', isEditorial ? payload.featured : Number(existing.featured || 0)],
+      ['status', isEditorial ? payload.status : existing.status || 'draft'],
+      ['editorial_notes', isEditorial ? payload.editorial_notes : existing.editorial_notes || ''],
       ['updatedAt', updatedAt],
-      ['slug', payload.slug || (payload.title || existing.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')],
-      ['seo_title', payload.seo_title],
-      ['meta_description', payload.meta_description],
-      ['tags', payload.tags],
-      ['municipality', payload.municipality],
+      ['slug', payload.slug || (payload.title || existing.title || 'story').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')],
+      ['seo_title', payload.seo_title || existing.seo_title || ''],
+      ['meta_description', payload.meta_description || existing.meta_description || ''],
+      ['tags', payload.tags || existing.tags || ''],
+      ['municipality', payload.municipality || existing.municipality || ''],
     ];
     const assignments = fields.map(([column]) => `${column} = ?`).join(', ');
     const values = fields.map(([, value]) => value);
@@ -1921,20 +2207,37 @@ app.get('/api/editorial/overview', authMiddleware, requireRole('admin', 'editor'
 
 app.get('/api/users/me', authMiddleware, async (req, res) => {
   return withDB(async (db) => {
-    const user = await db.get(`SELECT id, username, bio, avatar, role FROM users WHERE id = ?`, [req.user.id]);
+    const user = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [req.user.id]);
     if (!user) return res.status(404).json({ error: 'user not found' });
     const storyCount = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE author_id = ?`, [req.user.id]);
     const views = await db.get(`SELECT COALESCE(SUM(views),0) as total FROM stories WHERE author_id = ?`, [req.user.id]);
-    res.json({ user: { ...user, storyCount: Number(storyCount?.cnt || 0), totalViews: Number(views?.total || 0) } });
+    res.json({ user: { ...safeUserObject(user), storyCount: Number(storyCount?.cnt || 0), totalViews: Number(views?.total || 0) } });
   });
 });
 
-app.post('/api/media/upload', authMiddleware, requireRole('admin', 'editor', 'journalist', 'contributor'), upload.single('file'), async (req, res) => {
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  return withDB(async (db) => {
+    const user = await db.get(`SELECT id, username, bio, avatar, role, is_active FROM users WHERE id = ?`, [req.user.id]);
+    if (!user) return res.status(404).json({ error: 'user not found' });
+    const storyCount = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE author_id = ?`, [req.user.id]);
+    const views = await db.get(`SELECT COALESCE(SUM(views),0) as total FROM stories WHERE author_id = ?`, [req.user.id]);
+    res.json({ user: { ...safeUserObject(user), storyCount: Number(storyCount?.cnt || 0), totalViews: Number(views?.total || 0) } });
+  });
+});
+
+app.post('/api/media/upload', authMiddleware, requireRole('admin', 'editor', 'journalist', 'contributor'), (req, res, next) => {
+  upload.single('file')(req, res, (error) => {
+    if (error) {
+      return res.status(400).json({ error: error.message || 'File upload failed.' });
+    }
+    next();
+  });
+}, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
   return withDB(async (db) => {
-    const caption = String(req.body.caption || '').trim();
+    const caption = String(req.body.caption || '').trim().slice(0, 255);
     const createdAt = new Date().toISOString();
-    const originalName = String(req.file.originalname || req.file.filename || 'upload').trim();
+    const originalName = String(req.file.originalname || req.file.filename || 'upload').trim().slice(0, 255);
     const storedName = String(req.file.filename || '').trim();
     const mimeType = String(req.file.mimetype || 'application/octet-stream').trim();
     const size = Number(req.file.size || 0);
@@ -2020,7 +2323,8 @@ app.get('/api/contributors/performance', authMiddleware, requireRole('admin', 'e
 app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const category = String(req.query.category || '').trim();
-  const status = String(req.query.status || 'published').trim();
+  const requestedStatus = String(req.query.status || '').trim();
+  const enforcedStatus = req.user ? (requestedStatus || 'published') : 'published';
   if (!q) {
     return res.json({ results: [] });
   }
@@ -2031,10 +2335,8 @@ app.get('/api/search', async (req, res) => {
       filters.push('category = ?');
       params.push(category);
     }
-    if (status) {
-      filters.push('status = ?');
-      params.push(status);
-    }
+    filters.push('status = ?');
+    params.push(enforcedStatus);
     const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${filters.join(' AND ')} ORDER BY s.submittedAt DESC LIMIT 10`, params);
     const results = rows.map((story) => ({ ...story, comments: Number(story.comments || 0) }));
     res.json({ results });
@@ -2055,9 +2357,12 @@ app.post('/api/stories/:id/comments', authMiddleware, async (req, res) => {
   const { text, parentId, replyTo } = req.body || {};
   if (!text) return res.status(400).json({ error: 'comment text required' });
   return withDB(async (db) => {
+    const story = await db.get(`SELECT id, status FROM stories WHERE id = ?`, [id]);
+    if (!story || story.status !== 'published') return res.status(404).json({ error: 'story not found' });
     const createdAt = new Date().toISOString();
     const safeParentId = Number(parentId || replyTo || 0);
-    await db.run(`INSERT INTO comments (story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 'approved', ?, ?)`, [id, req.user.id, req.user.username, text, safeParentId, createdAt, createdAt]);
+    const safeText = String(text).trim().slice(0, 2000);
+    await db.run(`INSERT INTO comments (story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 'approved', ?, ?)`, [id, req.user.id, req.user.username, safeText, safeParentId, createdAt, createdAt]);
     const comments = await db.all(`SELECT id, story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at FROM comments WHERE story_id = ? ORDER BY created_at DESC`, [id]);
     res.json({ comments });
   });
@@ -2066,6 +2371,8 @@ app.post('/api/stories/:id/comments', authMiddleware, async (req, res) => {
 app.get('/api/stories/:id/comments', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
+    const story = await db.get(`SELECT id, status FROM stories WHERE id = ?`, [id]);
+    if (!story || story.status !== 'published') return res.status(404).json({ error: 'story not found' });
     const comments = await db.all(`SELECT id, story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at FROM comments WHERE story_id = ? ORDER BY created_at DESC`, [id]);
     res.json({ comments });
   });
@@ -2096,7 +2403,7 @@ app.get('/api/breaking-news', async (req, res) => {
   });
 });
 
-app.post('/api/corrections', async (req, res) => {
+app.post('/api/corrections', publicFormLimiter, async (req, res) => {
   const { name, email, articleUrl, issueType, description, supportingDocuments } = req.body || {};
   if (!name || !email || !description) return res.status(400).json({ error: 'name, email and description are required' });
   return withDB(async (db) => {
@@ -2114,7 +2421,7 @@ app.get('/api/corrections', authMiddleware, requireRole('admin', 'editor'), asyn
   });
 });
 
-app.post('/api/newsletter/subscribe', async (req, res) => {
+app.post('/api/newsletter/subscribe', publicFormLimiter, async (req, res) => {
   const { name, surname, email, province, preferences, frequency, breakingAlerts } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email required' });
   return withDB(async (db) => {
@@ -2198,8 +2505,9 @@ app.get('/api/admin/notifications', authMiddleware, requireRole('admin', 'editor
 app.get('/api/stories/:id', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
-    const s = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
-    const comments = await db.all(`SELECT author, text, at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
+    const s = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ? AND s.status = 'published'`, [id]);
+    if (!s) return res.status(404).json({ error: 'story not found' });
+    const comments = await db.all(`SELECT author_name as author, text, created_at as at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
     res.json({ story: s, comments });
   });
 });
@@ -2208,35 +2516,35 @@ app.get('/api/stories/:id', async (req, res) => {
 app.get('/story/:id', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
-    await db.run(`UPDATE stories SET views = COALESCE(views,0) + 1 WHERE id = ?`, [id]);
-    const s = await db.get(`SELECT s.*, u.username as author, u.bio as author_bio, u.avatar as author_avatar FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    const s = await db.get(`SELECT s.*, u.username as author, u.bio as author_bio, u.avatar as author_avatar FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ? AND s.status = 'published'`, [id]);
     if (!s) return res.status(404).send('Article not found');
-    const comments = await db.all(`SELECT author, text, at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
-    let related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
-    const trending = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? ORDER BY s.views DESC, s.submittedAt DESC LIMIT 3`, [id]);
+    await db.run(`UPDATE stories SET views = COALESCE(views,0) + 1 WHERE id = ?`, [id]);
+    const comments = await db.all(`SELECT author_name as author, text, created_at as at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
+    let related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+    const trending = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' ORDER BY s.views DESC, s.submittedAt DESC LIMIT 3`, [id]);
     if (!related.length) {
-      related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? ORDER BY s.submittedAt DESC LIMIT 3`, [id]);
+      related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' ORDER BY s.submittedAt DESC LIMIT 3`, [id]);
     }
 
     let contributorStories = [];
     if (s.author_id) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.author_id = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author_id]);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.author_id = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author_id]);
     }
     if (!contributorStories.length && s.author) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND lower(COALESCE(u.username, '')) = lower(?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author]);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND lower(COALESCE(u.username, '')) = lower(?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author]);
     }
     if (!contributorStories.length) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
     }
 
     const municipalityName = inferMunicipalityFromStory(s);
     let municipalityStories = [];
     if (municipalityName) {
       const municipalityTerm = municipalityName.toLowerCase();
-      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND (lower(COALESCE(s.municipality, '')) = ? OR lower(COALESCE(s.title, '')) LIKE ? OR lower(COALESCE(s.content, '')) LIKE ?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, municipalityTerm, `%${municipalityTerm}%`, `%${municipalityTerm}%`]);
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND (lower(COALESCE(s.municipality, '')) = ? OR lower(COALESCE(s.title, '')) LIKE ? OR lower(COALESCE(s.content, '')) LIKE ?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, municipalityTerm, `%${municipalityTerm}%`, `%${municipalityTerm}%`]);
     }
     if (!municipalityStories.length) {
-      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
     }
 
     const title = s.title || 'Article';
@@ -2583,10 +2891,28 @@ function inferMunicipalityFromStory(story = {}) {
 function formatArticleContent(content) {
   const trimmed = String(content || '').trim();
   if (!trimmed) return '';
-  if (trimmed.includes('<p') || trimmed.includes('<div') || trimmed.includes('<br')) {
-    return trimmed;
+  const sanitized = sanitizeHtml(trimmed, {
+    allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'img', 'figure', 'figcaption', 'span', 'code', 'pre'],
+    allowedAttributes: {
+      a: ['href', 'target', 'rel', 'title'],
+      img: ['src', 'alt', 'title'],
+      '*': ['class']
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedStyles: {},
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' })
+    }
+  });
+  if (!sanitized) return '';
+  if (/<(?:p|div|br|h[1-6]|ul|ol|li|blockquote|img|a|strong|b|em|i|figure|figcaption|span|code|pre)/i.test(sanitized)) {
+    return sanitized;
   }
-  return trimmed.split(/\n\n+/).map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`).join('');
+  return sanitized.split(/\n\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`).join('');
+}
+
+function sanitizeTextInput(value, fallback = '') {
+  return String(value ?? fallback).trim().replace(/[\u0000-\u001F\u007F]/g, '').slice(0, 2000);
 }
 
 // Small helpers for server-side escaping
@@ -2608,30 +2934,30 @@ function escapeAttr(str) {
 app.get('/api/featured-story', async (req, res) => {
   return withDB(async (db) => {
     const featured = await db.get(`
-      SELECT s.*, u.username as author, 
+      SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
-      FROM stories s 
-      LEFT JOIN users u ON u.id = s.author_id 
-      WHERE s.featured = 1 
-      ORDER BY s.submittedAt DESC 
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.featured = 1 AND s.status = 'published'
+      ORDER BY s.submittedAt DESC
       LIMIT 1
     `);
-    
+
     if (featured) {
       featured.comments = Number(featured.comments || 0);
       return res.json({ story: featured });
     }
-    
-    // If no featured story, return the latest story
+
     const latest = await db.get(`
       SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
-      FROM stories s 
-      LEFT JOIN users u ON u.id = s.author_id 
-      ORDER BY s.submittedAt DESC 
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.status = 'published'
+      ORDER BY s.submittedAt DESC
       LIMIT 1
     `);
-    
+
     if (latest) {
       latest.comments = Number(latest.comments || 0);
     }
@@ -2646,7 +2972,7 @@ app.get('/api/breaking-news', async (req, res) => {
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
       FROM stories s
       LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.featured = 0 AND s.is_breaking = 1
+      WHERE s.status = 'published' AND s.featured = 0 AND s.is_breaking = 1
       ORDER BY s.submittedAt DESC LIMIT 6
     `);
 
@@ -2664,7 +2990,7 @@ app.get('/api/breaking-news', async (req, res) => {
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
       FROM stories s
       LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.featured = 0
+      WHERE s.status = 'published' AND s.featured = 0
       ORDER BY s.submittedAt DESC LIMIT 6
     `);
 
@@ -2677,30 +3003,29 @@ app.get('/api/breaking-news', async (req, res) => {
   });
 });
 
-// Get latest stories (excluding featured or a specific story ID)
 app.get('/api/latest-stories', async (req, res) => {
   const excludeId = req.query.exclude || null;
   return withDB(async (db) => {
     let query = `
       SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
-      FROM stories s 
-      LEFT JOIN users u ON u.id = s.author_id 
-      WHERE s.featured = 0
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.status = 'published' AND s.featured = 0
     `;
-    
+
     const params = [];
     if (excludeId) {
       query += ` AND s.id != ?`;
       params.push(excludeId);
     }
-    
+
     query += ` ORDER BY s.submittedAt DESC LIMIT 4`;
-    
+
     const stories = await db.all(query, params);
-    const result = stories.map(s => ({
-      ...s,
-      comments: Number(s.comments || 0)
+    const result = stories.map((story) => ({
+      ...story,
+      comments: Number(story.comments || 0)
     }));
     res.json({ stories: result });
   });

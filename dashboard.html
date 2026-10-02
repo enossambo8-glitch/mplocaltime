@@ -240,6 +240,7 @@
     const user = localStorage.getItem('currentUser') || 'Guest';
     const token = localStorage.getItem('token') || '';
     const role = localStorage.getItem('currentRole') || 'user';
+    let currentUser = { username: user, role };
     const welcome = document.getElementById('welcome');
     const profileStats = document.getElementById('profileStats');
     const storyArea = document.getElementById('storyArea');
@@ -291,7 +292,23 @@
     if (!token || !user || user === 'Guest') {
       showNotLoggedIn();
     } else {
-      welcome.innerHTML = `Logged in as <strong>${user}</strong> (${role})`;
+      async function loadSession() {
+        try {
+          const response = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+          const payload = await response.json();
+          if (response.ok && payload.user) {
+            currentUser = payload.user;
+            welcome.innerHTML = `Logged in as <strong>${escapeHtml(currentUser.username)}</strong> (${escapeHtml(currentUser.role || 'user')})`;
+            localStorage.setItem('currentUser', currentUser.username);
+            localStorage.setItem('currentRole', currentUser.role || 'user');
+            return;
+          }
+        } catch (error) {
+          // fall back to the stored client values when the profile endpoint is unavailable
+        }
+        welcome.innerHTML = `Logged in as <strong>${escapeHtml(user)}</strong> (${escapeHtml(role)})`;
+      }
+
       logoutButton?.addEventListener('click', handleLogout);
       storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
         element.disabled = false;
@@ -299,6 +316,7 @@
       notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
         element.disabled = false;
       });
+      loadSession();
 
       async function loadProfile() {
         if (!token) {
@@ -313,7 +331,7 @@
             return;
           }
           const userData = data.user || {};
-          profileStats.innerHTML = `<strong>${userData.username}</strong> • ${userData.role || 'user'} • ${userData.storyCount || 0} stories • ${userData.totalViews || 0} total views`;
+          profileStats.innerHTML = `<strong>${escapeHtml(userData.username)}</strong> • ${escapeHtml(userData.role || 'user')} • ${escapeHtml(userData.storyCount || 0)} stories • ${escapeHtml(userData.totalViews || 0)} total views`;
         } catch (err) {
           profileStats.innerHTML = '<p>Unable to load profile right now.</p>';
         }
@@ -335,24 +353,26 @@
               <div class="card" style="padding:14px;"><strong>Articles published</strong><div>${analytics.articlesPublished || overview.publishedCount || 0}</div></div>
               <div class="card" style="padding:14px;"><strong>Newsletter subs</strong><div>${analytics.newsletterSubscribers || 0}</div></div>
               <div class="card" style="padding:14px;"><strong>Push subscribers</strong><div>${analytics.pushNotificationSubscribers || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Most read</strong><div>${analytics.mostReadArticle || overview.topStories?.[0]?.title || '—'}</div></div>
+              <div class="card" style="padding:14px;"><strong>Most read</strong><div>${escapeHtml(analytics.mostReadArticle || overview.topStories?.[0]?.title || '—')}</div></div>
             </div>
             <div class="card" style="padding:14px;">
               <strong>Performance highlights</strong>
               <ul>
-                <li>Top reporter: ${analytics.topReporter || '—'}</li>
-                <li>Top municipality: ${analytics.topMunicipality || '—'}</li>
-                <li>Popular category: ${analytics.popularCategories?.[0]?.category || '—'}</li>
-                <li>Bounce rate: ${analytics.bounceRate || '—'}</li>
+                <li>Top reporter: ${escapeHtml(analytics.topReporter || '—')}</li>
+                <li>Top municipality: ${escapeHtml(analytics.topMunicipality || '—')}</li>
+                <li>Popular category: ${escapeHtml(analytics.popularCategories?.[0]?.category || '—')}</li>
+                <li>Bounce rate: ${escapeHtml(analytics.bounceRate || '—')}</li>
               </ul>
             </div>`;
           const overviewHtml = `
-            <p><strong>${overview.storyCount || 0}</strong> total stories</p>
-            <p><strong>${overview.publishedCount || analytics.articlesPublished || 0}</strong> published</p>
-            <p><strong>${overview.draftCount || 0}</strong> drafts</p>
-            <p><strong>${overview.commentCount || 0}</strong> comments</p>
-            <p><strong>${overview.viewCount || analytics.pageViews || 0}</strong> total views</p>
-            <ul>${(overview.topStories || []).map((story) => `<li>${story.title} — ${story.views || 0} views</li>`).join('')}</ul>`;
+            <div class="card" style="padding:14px;">
+              <p><strong>${escapeHtml(overview.storyCount || 0)}</strong> total stories</p>
+              <p><strong>${escapeHtml(overview.publishedCount || analytics.articlesPublished || 0)}</strong> published</p>
+              <p><strong>${escapeHtml(overview.draftCount || 0)}</strong> drafts</p>
+              <p><strong>${escapeHtml(overview.commentCount || 0)}</strong> comments</p>
+              <p><strong>${escapeHtml(overview.viewCount || analytics.pageViews || 0)}</strong> total views</p>
+              <ul>${(overview.topStories || []).map((story) => `<li>${escapeHtml(story.title)} — ${escapeHtml(story.views || 0)} views</li>`).join('')}</ul>
+            </div>`;
 
           if (editorAnalytics) {
             editorAnalytics.innerHTML = editorHtml;
@@ -500,13 +520,13 @@
           }
           notificationList.innerHTML = notifications.map((item) => `
             <div class="card" style="margin-bottom:12px;padding:14px;">
-              <strong>${item.title || 'Untitled notification'}</strong>
-              <p style="margin:8px 0;">${item.body || '—'}</p>
-              <div class="meta">${item.category || 'General'} • ${item.province || 'All'} • ${new Date(item.sent_at || item.created_at || Date.now()).toLocaleString('en-ZA')}</div>
+              <strong>${escapeHtml(item.title || 'Untitled notification')}</strong>
+              <p style="margin:8px 0;">${escapeHtml(item.body || '—')}</p>
+              <div class="meta">${escapeHtml(item.category || 'General')} • ${escapeHtml(item.province || 'All')} • ${escapeHtml(new Date(item.sent_at || item.created_at || Date.now()).toLocaleString('en-ZA'))}</div>
             </div>
           `).join('');
         } catch (error) {
-          notificationList.innerHTML = `<p>${error.message}</p>`;
+          notificationList.innerHTML = `<p>${escapeHtml(error.message || 'Unable to load notifications')}</p>`;
         }
       }
 
@@ -559,10 +579,10 @@
               ${contributors.map((person) => `
                 <div class="card" style="padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
                   <div>
-                    <strong>${person.username || 'Contributor'}</strong>
-                    <div class="meta">${person.role || 'contributor'} • ${person.articlesPublished || 0} published • ${person.totalViews || 0} views</div>
+                    <strong>${escapeHtml(person.username || 'Contributor')}</strong>
+                    <div class="meta">${escapeHtml(person.role || 'contributor')} • ${escapeHtml(person.articlesPublished || 0)} published • ${escapeHtml(person.totalViews || 0)} views</div>
                   </div>
-                  <div class="meta">${person.bio || 'Active newsroom contributor'}</div>
+                  <div class="meta">${escapeHtml(person.bio || 'Active newsroom contributor')}</div>
                 </div>
               `).join('')}
             </div>`;
@@ -595,9 +615,9 @@
           storyArea.innerHTML = stories.map((story) => `
             <div class="card" style="margin-bottom:18px;">
               <div class="card-content">
-                <h3>${story.title}</h3>
-                <p>${story.category || 'News'} • ${new Date(story.submittedAt).toLocaleDateString('en-ZA')} • ${story.views || 0} views • ${story.status || 'draft'}</p>
-                <p>${String(story.content || '').slice(0, 180)}${String(story.content || '').length > 180 ? '...' : ''}</p>
+                <h3>${escapeHtml(story.title || 'Untitled story')}</h3>
+                <p>${escapeHtml(story.category || 'News')} • ${escapeHtml(new Date(story.submittedAt).toLocaleDateString('en-ZA'))} • ${escapeHtml(story.views || 0)} views • ${escapeHtml(story.status || 'draft')}</p>
+                <p>${escapeHtml(String(story.content || '').slice(0, 180))}${String(story.content || '').length > 180 ? '...' : ''}</p>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
                   <button class="btn primary" type="button" data-update="pending-review" data-id="${story.id}">Send to review</button>
                   <button class="btn" type="button" data-update="published" data-id="${story.id}">Publish</button>
@@ -642,7 +662,7 @@
             searchResults.innerHTML = '<p>No matching stories found.</p>';
             return;
           }
-          searchResults.innerHTML = results.map((story) => `<div class="card" style="margin-bottom:12px;"><div class="card-content"><strong>${story.title}</strong><p>${story.category || 'News'} • ${story.status || 'draft'}</p></div></div>`).join('');
+          searchResults.innerHTML = results.map((story) => `<div class="card" style="margin-bottom:12px;"><div class="card-content"><strong>${escapeHtml(story.title || 'Untitled story')}</strong><p>${escapeHtml(story.category || 'News')} • ${escapeHtml(story.status || 'draft')}</p></div></div>`).join('');
         } catch (error) {
           searchResults.innerHTML = '<p>Search is unavailable right now.</p>';
         }
