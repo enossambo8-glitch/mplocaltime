@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { init } = require('../db');
 const { initializeDatabase } = require('../server');
 const app = require('../server');
 const { buildLatestUpdatesMarkup } = require('../main');
@@ -544,5 +545,140 @@ test('editorial analysis and review endpoints provide advisory workflow data', a
     assert.match(reviewPayload.review.notes || '', /second source/i);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('scheduled publishing does not publish future stories early', async () => {
+  await initializeDatabase();
+  const db = await init();
+  const admin = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
+  await db.run('DELETE FROM revision_history');
+  await db.run('DELETE FROM stories');
+  const now = new Date('2026-10-02T12:00:00Z');
+  const futureTime = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+
+  try {
+    await db.run(`INSERT INTO stories (title, category, content, author_id, status, scheduled_at, updatedAt, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+      'Future scheduled story',
+      'News',
+      'This story should not publish before its scheduled time.',
+      admin.id,
+      'scheduled',
+      futureTime,
+      now.toISOString(),
+      'future-scheduled-story',
+    ]);
+
+    const result = await app.processScheduledStories({ db, now, actorId: admin.id });
+    const story = await db.get('SELECT * FROM stories WHERE slug = ?', ['future-scheduled-story']);
+
+    assert.equal(result.processed, 0);
+    assert.equal(story.status, 'scheduled');
+    assert.equal(story.published_at, null);
+  } finally {
+    await db.close();
+  }
+});
+
+test('scheduled publishing publishes stories when the scheduled time is due', async () => {
+  await initializeDatabase();
+  const db = await init();
+  const admin = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
+  await db.run('DELETE FROM revision_history');
+  await db.run('DELETE FROM stories');
+  const now = new Date('2026-10-02T12:00:00Z');
+  const dueTime = new Date(now.getTime() - 60 * 1000).toISOString();
+
+  try {
+    await db.run(`INSERT INTO stories (title, category, content, author_id, status, scheduled_at, updatedAt, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+      'Due scheduled story',
+      'News',
+      'This story should publish as soon as it is due.',
+      admin.id,
+      'scheduled',
+      dueTime,
+      now.toISOString(),
+      'due-scheduled-story',
+    ]);
+
+    const result = await app.processScheduledStories({ db, now, actorId: admin.id });
+    const story = await db.get('SELECT * FROM stories WHERE slug = ?', ['due-scheduled-story']);
+    const auditRows = await db.all('SELECT * FROM revision_history WHERE story_id = ? AND action = ?', [story.id, 'scheduled_publish']);
+
+    assert.equal(result.processed, 1);
+    assert.equal(story.status, 'published');
+    assert.equal(story.scheduled_at, dueTime);
+    assert.equal(story.published_at, now.toISOString());
+    assert.equal(auditRows.length, 1);
+  } finally {
+    await db.close();
+  }
+});
+
+test('scheduled publishing is idempotent and does not duplicate audit actions', async () => {
+  await initializeDatabase();
+  const db = await init();
+  const admin = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
+  await db.run('DELETE FROM revision_history');
+  await db.run('DELETE FROM stories');
+  const now = new Date('2026-10-02T12:00:00Z');
+  const dueTime = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+
+  try {
+    await db.run(`INSERT INTO stories (title, category, content, author_id, status, scheduled_at, updatedAt, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+      'Repeat scheduled story',
+      'News',
+      'This scheduled story should only be published once.',
+      admin.id,
+      'scheduled',
+      dueTime,
+      now.toISOString(),
+      'repeat-scheduled-story',
+    ]);
+
+    const firstRun = await app.processScheduledStories({ db, now, actorId: admin.id });
+    const secondRun = await app.processScheduledStories({ db, now, actorId: admin.id });
+    const story = await db.get('SELECT * FROM stories WHERE slug = ?', ['repeat-scheduled-story']);
+    const auditRows = await db.all('SELECT * FROM revision_history WHERE story_id = ? AND action = ?', [story.id, 'scheduled_publish']);
+
+    assert.equal(firstRun.processed, 1);
+    assert.equal(secondRun.processed, 0);
+    assert.equal(story.status, 'published');
+    assert.equal(auditRows.length, 1);
+  } finally {
+    await db.close();
+  }
+});
+
+test('scheduled publishing leaves non-scheduled stories unchanged', async () => {
+  await initializeDatabase();
+  const db = await init();
+  const admin = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
+  await db.run('DELETE FROM revision_history');
+  await db.run('DELETE FROM stories');
+  const now = new Date('2026-10-02T12:00:00Z');
+  const dueTime = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+
+  try {
+    await db.run(`INSERT INTO stories (title, category, content, author_id, status, scheduled_at, updatedAt, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+      'Draft story',
+      'News',
+      'This draft should stay draft and never be auto-published.',
+      admin.id,
+      'draft',
+      dueTime,
+      now.toISOString(),
+      'draft-story-unchanged',
+    ]);
+
+    const result = await app.processScheduledStories({ db, now, actorId: admin.id });
+    const story = await db.get('SELECT * FROM stories WHERE slug = ?', ['draft-story-unchanged']);
+    const auditRows = await db.all('SELECT * FROM revision_history WHERE action = ? AND story_id = ?', ['scheduled_publish', story.id]);
+
+    assert.equal(result.processed, 0);
+    assert.equal(story.status, 'draft');
+    assert.equal(auditRows.length, 0);
+  } finally {
+    await db.close();
   }
 });

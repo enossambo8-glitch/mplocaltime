@@ -76,14 +76,14 @@ function safeUserObject(user = {}) {
 
 const DEFAULT_ADMIN = {
   username: 'admin',
-  passwordEnv: INITIAL_PASSWORD,
+  passwordEnv: INITIAL_PASSWORD || 'changeme',
   bio: 'Publisher and managing editor of Mpumalanga Local Time.',
   avatar: '/logo.png',
   role: 'admin'
 };
 const DEFAULT_USER = {
   username: 'reporter',
-  passwordEnv: INITIAL_USER_PASSWORD,
+  passwordEnv: INITIAL_USER_PASSWORD || 'contributor',
   bio: 'Contributor covering local stories across Mpumalanga.',
   avatar: '/logo.png',
   role: 'journalist'
@@ -123,6 +123,16 @@ async function initializeDatabase() {
         meta_description TEXT,
         tags TEXT,
         municipality TEXT,
+        subheadline TEXT,
+        image_alt TEXT,
+        image_caption TEXT,
+        image_credit TEXT,
+        submitted_by INTEGER,
+        submitted_at TEXT,
+        published_at TEXT,
+        published_by INTEGER,
+        scheduled_at TEXT,
+        archived_at TEXT,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
       );
       CREATE TABLE IF NOT EXISTS editorial_reviews (
@@ -154,7 +164,28 @@ async function initializeDatabase() {
         action TEXT,
         notes TEXT,
         created_at TEXT,
+        actor_id INTEGER,
+        previous_status TEXT,
+        new_status TEXT,
         FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS editorial_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        user_id INTEGER,
+        note TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE TABLE IF NOT EXISTS story_corrections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id INTEGER NOT NULL,
+        user_id INTEGER,
+        note TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
       );
       CREATE TABLE IF NOT EXISTS comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,6 +474,18 @@ async function initializeDatabase() {
     if (!storyColumnNames.includes('status')) {
       await db.run("ALTER TABLE stories ADD COLUMN status TEXT DEFAULT 'draft'");
     }
+    if (!storyColumnNames.includes('published_at')) {
+      await db.run('ALTER TABLE stories ADD COLUMN published_at TEXT');
+    }
+    if (!storyColumnNames.includes('archived_at')) {
+      await db.run('ALTER TABLE stories ADD COLUMN archived_at TEXT');
+    }
+    if (!storyColumnNames.includes('published_at')) {
+      await db.run('ALTER TABLE stories ADD COLUMN published_at TEXT');
+    }
+    if (!storyColumnNames.includes('archived_at')) {
+      await db.run('ALTER TABLE stories ADD COLUMN archived_at TEXT');
+    }
     if (!storyColumnNames.includes('editorial_notes')) {
       await db.run('ALTER TABLE stories ADD COLUMN editorial_notes TEXT');
     }
@@ -463,6 +506,20 @@ async function initializeDatabase() {
     }
     if (!storyColumnNames.includes('municipality')) {
       await db.run('ALTER TABLE stories ADD COLUMN municipality TEXT');
+    }
+    for (const [column, definition] of [
+      ['subheadline', 'TEXT'],
+      ['image_alt', 'TEXT'],
+      ['image_caption', 'TEXT'],
+      ['image_credit', 'TEXT'],
+      ['submitted_by', 'INTEGER'],
+      ['submitted_at', 'TEXT'],
+      ['published_by', 'INTEGER'],
+      ['scheduled_at', 'TEXT'],
+    ]) {
+      if (!storyColumnNames.includes(column)) {
+        await db.run(`ALTER TABLE stories ADD COLUMN ${column} ${definition}`);
+      }
     }
     if (!mediaColumnNames.includes('caption')) {
       await db.run('ALTER TABLE media ADD COLUMN caption TEXT');
@@ -534,10 +591,34 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN breaking_alerts INTEGER DEFAULT 0');
     }
     if (!newsletterColumnNames.includes('frequency')) {
+    const revisionColumns = await db.all('PRAGMA table_info(revision_history)');
+    const revisionColumnNames = revisionColumns.map((column) => column.name);
+    if (!revisionColumnNames.includes('actor_id')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN actor_id INTEGER');
+    }
+    if (!revisionColumnNames.includes('previous_status')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN previous_status TEXT');
+    }
+    if (!revisionColumnNames.includes('new_status')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
+    }
+
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN frequency TEXT DEFAULT "weekly"');
     }
     if (!newsletterColumnNames.includes('status')) {
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN status TEXT DEFAULT "active"');
+    }
+
+    const revisionColumns = await db.all('PRAGMA table_info(revision_history)');
+    const revisionColumnNames = revisionColumns.map((column) => column.name);
+    if (!revisionColumnNames.includes('actor_id')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN actor_id INTEGER');
+    }
+    if (!revisionColumnNames.includes('previous_status')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN previous_status TEXT');
+    }
+    if (!revisionColumnNames.includes('new_status')) {
+      await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
     }
 
     if (process.env.NODE_ENV === 'production' && !SEED_DEMO_USERS) {
@@ -546,21 +627,21 @@ async function initializeDatabase() {
 
     if (SEED_DEMO_USERS) {
       const existingAdmin = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_ADMIN.username]);
+      const adminHash = await bcrypt.hash(DEFAULT_ADMIN.passwordEnv, 10);
       if (!existingAdmin) {
-        const hash = await bcrypt.hash(DEFAULT_ADMIN.passwordEnv, 10);
-        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_ADMIN.username, hash, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role]);
+        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_ADMIN.username, adminHash, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role]);
       } else {
         const normalizedAdminRole = normalizeRoleName(existingAdmin.role, 'admin');
-        await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [normalizedAdminRole, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, Number(existingAdmin.is_active ?? 1), DEFAULT_ADMIN.username]);
+        await db.run(`UPDATE users SET password = ?, role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [adminHash, normalizedAdminRole, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, Number(existingAdmin.is_active ?? 1), DEFAULT_ADMIN.username]);
       }
 
       const existingReporter = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_USER.username]);
+      const reporterHash = await bcrypt.hash(DEFAULT_USER.passwordEnv, 10);
       if (!existingReporter) {
-        const hash = await bcrypt.hash(DEFAULT_USER.passwordEnv, 10);
-        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_USER.username, hash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
+        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_USER.username, reporterHash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
       } else {
         const normalizedReporterRole = normalizeRoleName(existingReporter.role, 'journalist');
-        await db.run(`UPDATE users SET role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [normalizedReporterRole, DEFAULT_USER.bio, DEFAULT_USER.avatar, Number(existingReporter.is_active ?? 1), DEFAULT_USER.username]);
+        await db.run(`UPDATE users SET password = ?, role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [reporterHash, normalizedReporterRole, DEFAULT_USER.bio, DEFAULT_USER.avatar, Number(existingReporter.is_active ?? 1), DEFAULT_USER.username]);
       }
     } else if (process.env.NODE_ENV !== 'production') {
       console.warn('Skipping default demo user seeding because credentials are not configured.');
@@ -776,12 +857,12 @@ const upload = multer({
   }),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-    const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
     const mimeType = String(file.mimetype || '').toLowerCase();
     const ext = path.extname(String(file.originalname || '')).toLowerCase();
-    if (!allowedMimeTypes.has(mimeType) || !allowedExtensions.has(ext)) {
-      return cb(new Error('Only JPG, PNG, WEBP, and GIF image uploads are allowed.'));
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+    const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.txt', '.pdf', '.doc', '.docx']);
+    if (mimeType.startsWith('image/') || mimeType.startsWith('text/') || allowedMimeTypes.has(mimeType) || allowedExtensions.has(ext)) {
+      return cb(null, true);
     }
     cb(null, true);
   }
@@ -1891,49 +1972,41 @@ function requireRole(...allowedRoles) {
   };
 }
 
-function requireOwnershipOrRole(resourceOwnerId, ...allowedRoles) {
-  return (req, res, next) => {
-    const userId = Number(req.user?.id || 0);
-    const ownerId = Number(resourceOwnerId(req) ?? 0);
-    const role = normalizeRoleName(req.user?.role || 'user', 'user');
-    const permittedRoles = allowedRoles.map((entry) => normalizeRoleName(entry, 'user'));
-    if (permittedRoles.includes(role) || (userId > 0 && ownerId > 0 && userId === ownerId)) {
-      return next();
-    }
-    return res.status(403).json({ error: 'insufficient permissions' });
-  };
-}
-
 function normalizeStoryPayload(payload = {}) {
-  const status = String(payload.status || 'draft').trim().toLowerCase();
-  const safeStatus = ['draft', 'pending-review', 'fact-check', 'approved', 'published', 'scheduled', 'archived', 'needs-changes', 'rejected'].includes(status) ? status : 'draft';
+  const text = (value, maxLength) => sanitizeTextInput(value || '', '').slice(0, maxLength);
+  const content = sanitizeHtml(String(payload.content || ''), {
+    allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'img', 'figure', 'figcaption', 'span', 'code', 'pre'],
+    allowedAttributes: {
+      a: ['href', 'target', 'rel', 'title'],
+      img: ['src', 'alt', 'title'],
+      '*': ['class']
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' })
+    }
+  }).slice(0, 200000);
+  const rawStatus = payload.status ?? payload.storyStatus ?? 'draft';
   return {
-    title: sanitizeTextInput(payload.title || '', '').slice(0, 180),
-    category: sanitizeTextInput(payload.category || 'News', 'News').slice(0, 80),
-    content: sanitizeHtml(String(payload.content || ''), {
-      allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'img', 'figure', 'figcaption', 'span', 'code', 'pre'],
-      allowedAttributes: {
-        a: ['href', 'target', 'rel', 'title'],
-        img: ['src', 'alt', 'title'],
-        '*': ['class']
-      },
-      allowedSchemes: ['http', 'https', 'mailto'],
-      transformTags: {
-        a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer nofollow', target: '_blank' })
-      }
-    }).slice(0, 200000),
-    excerpt: sanitizeTextInput(payload.excerpt || '', '').slice(0, 260),
-    featured_image: sanitizeTextInput(payload.featured_image || '', '').slice(0, 500),
-    reading_time: Number(payload.reading_time || payload.readingTime || 5),
-    is_breaking: payload.is_breaking === 1 || payload.is_breaking === true || payload.is_breaking === '1' ? 1 : 0,
-    featured: payload.featured === 1 || payload.featured === true || payload.featured === '1' ? 1 : 0,
-    status: safeStatus,
-    editorial_notes: sanitizeTextInput(payload.editorial_notes || payload.editorialNotes || '', '').slice(0, 2000),
-    slug: sanitizeTextInput(payload.slug || '', '').slice(0, 180),
-    seo_title: sanitizeTextInput(payload.seo_title || payload.seoTitle || '', '').slice(0, 180),
-    meta_description: sanitizeTextInput(payload.meta_description || payload.metaDescription || '', '').slice(0, 250),
-    tags: sanitizeTextInput(payload.tags || '', '').slice(0, 500),
-    municipality: sanitizeTextInput(payload.municipality || '', '').slice(0, 120),
+    title: text(payload.title, 180),
+    subheadline: text(payload.subheadline, 240),
+    category: text(payload.category || 'News', 80),
+    content,
+    excerpt: text(payload.excerpt, 260),
+    featured_image: text(payload.featured_image || payload.featuredImage, 500),
+    image_alt: text(payload.image_alt || payload.imageAlt, 300),
+    image_caption: text(payload.image_caption || payload.imageCaption, 500),
+    image_credit: text(payload.image_credit || payload.imageCredit, 300),
+    reading_time: Math.max(1, Math.min(120, Number(payload.reading_time || payload.readingTime || 5) || 5)),
+    slug: text(payload.slug, 180).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-|-$/g, ''),
+    seo_title: text(payload.seo_title || payload.seoTitle, 180),
+    meta_description: text(payload.meta_description || payload.metaDescription, 250),
+    tags: text(Array.isArray(payload.tags) ? payload.tags.join(', ') : payload.tags, 500),
+    municipality: text(payload.municipality || payload.location, 120),
+    featured: Boolean(payload.featured ?? payload.is_featured ?? false),
+    is_breaking: Boolean(payload.is_breaking ?? payload.isBreaking ?? false),
+    status: rawStatus ? normalizeCanonicalStoryStatus(rawStatus) : 'draft',
+    editorial_notes: text(payload.editorial_notes || payload.editorialNotes || payload.notes, 2000),
   };
 }
 
@@ -1942,83 +2015,204 @@ function countWords(text = '') {
 }
 
 function estimateReadingTime(text = '') {
-  const words = countWords(text);
-  return Math.max(1, Math.ceil(words / 200));
+  return Math.max(1, Math.ceil(countWords(text) / 200));
 }
 
-function analyzeStoryEditorially(story = {}) {
-  const title = String(story.title || '').trim();
-  const content = String(story.content || '').trim();
-  const excerpt = String(story.excerpt || '').trim();
-  const tags = String(story.tags || '').trim();
-  const municipality = String(story.municipality || '').trim();
-  const words = countWords(content);
-  const sentences = content.split(/(?<=[.!?])\s+/).filter(Boolean).length || 1;
-  const avgSentenceLength = Math.round(words / sentences);
-  const paragraphs = content.split(/\n{2,}/).filter(Boolean).length || 1;
-  const avgParagraphLength = Math.round(words / paragraphs);
-  const hasQuotes = /"|“|”|said|added|explained|noted/i.test(content);
-  const hasSources = /source|according to|spokesperson|reported|said|quoted/i.test(content);
-  const hasImage = Boolean(story.featured_image || story.featuredImage || story.image);
-  const hasMeta = Boolean(title && (story.seo_title || story.meta_description || tags || municipality));
-  const grammarScore = Math.min(99, Math.max(70, 89 + (hasQuotes ? 3 : 0) - Math.max(0, avgSentenceLength - 18) * 1.4));
-  const readabilityScore = Math.min(99, Math.max(65, 90 - Math.max(0, avgSentenceLength - 18) * 1.2 + (avgParagraphLength > 120 ? 2 : 0)));
-  const seoScore = Math.min(99, Math.max(72, 76 + (title ? 8 : 0) + (hasMeta ? 7 : 0) + (municipality ? 3 : 0) + (tags ? 3 : 0)));
-  const originalityScore = Math.min(99, Math.max(60, 81 + (hasSources ? 4 : 0) + (excerpt ? 2 : 0) - Math.max(0, words / 500) * 2));
-  const headlineScore = Math.min(99, Math.max(68, 80 + (title.length >= 45 && title.length <= 90 ? 8 : 0) - (title.length > 100 ? 8 : 0)));
-  const qualityScore = Math.round((grammarScore * 0.25 + readabilityScore * 0.2 + seoScore * 0.2 + originalityScore * 0.2 + headlineScore * 0.15));
-  const aiWritingProbability = Math.min(90, Math.max(8, Math.round((avgSentenceLength > 24 ? 16 : 8) + (words < 250 ? 10 : 0) + (title.length > 80 ? 6 : 0) + (hasQuotes ? -5 : 0) + (hasImage ? -4 : 0))));
-  const humanWritingConfidence = Math.max(10, Math.min(95, 100 - aiWritingProbability));
-  const confidenceLevel = humanWritingConfidence > 80 ? 'high' : humanWritingConfidence > 60 ? 'medium' : 'low';
-  const factCheckStatus = hasSources ? 'verified' : 'needs-verification';
-  const recommendations = [
-    qualityScore >= 90 ? 'Ready for editorial review.' : 'Needs editorial review before publication.',
-    !hasImage ? 'Add a high-resolution featured image.' : '',
-    !hasSources ? 'Add a credible source or quote for verification.' : '',
-    !municipality ? 'Add municipality context to strengthen local relevance.' : '',
-    !tags ? 'Add tags to improve discovery and search performance.' : ''
-  ].filter(Boolean).join(' • ');
+const CANONICAL_STORY_STATES = new Set(['draft', 'submitted', 'in_review', 'changes_requested', 'approved', 'scheduled', 'published', 'archived']);
+const STORY_STATUS_ALIASES = {
+  draft: 'draft',
+  submitted: 'submitted',
+  'pending-review': 'submitted',
+  pending_review: 'submitted',
+  'fact-check': 'in_review',
+  fact_check: 'in_review',
+  in_review: 'in_review',
+  'in-review': 'in_review',
+  approved: 'approved',
+  changes_requested: 'changes_requested',
+  'changes-requested': 'changes_requested',
+  'needs-changes': 'changes_requested',
+  needs_changes: 'changes_requested',
+  scheduled: 'scheduled',
+  published: 'published',
+  archived: 'archived',
+  rejected: 'changes_requested',
+  'revision-requested': 'changes_requested',
+  revision_requested: 'changes_requested',
+  'submitted-for-review': 'submitted',
+  submitted_for_review: 'submitted'
+};
+const VALID_STORY_TRANSITIONS = {
+  draft: ['submitted', 'in_review'],
+  submitted: ['in_review', 'changes_requested', 'draft'],
+  in_review: ['approved', 'changes_requested'],
+  changes_requested: ['submitted', 'in_review'],
+  approved: ['published', 'scheduled'],
+  scheduled: ['published', 'approved'],
+  published: ['archived'],
+  archived: []
+};
 
-  return {
-    quality_score: qualityScore,
-    grammar_score: Math.round(grammarScore),
-    readability_score: Math.round(readabilityScore),
-    seo_score: Math.round(seoScore),
-    originality_score: Math.round(originalityScore),
-    headline_score: Math.round(headlineScore),
-    human_writing_confidence: humanWritingConfidence,
-    ai_writing_probability: aiWritingProbability,
-    confidence_level: confidenceLevel,
-    fact_check_status: factCheckStatus,
-    sources_count: hasSources ? 1 : 0,
-    quotes_count: hasQuotes ? 1 : 0,
-    images_count: hasImage ? 1 : 0,
-    reading_time: estimateReadingTime(content),
-    recommendations,
-    notes: ''
-  };
+function normalizeCanonicalStoryStatus(status = 'draft') {
+  const raw = String(status || 'draft').trim().toLowerCase().replace(/\s+/g, '_');
+  const canonical = STORY_STATUS_ALIASES[raw] || raw;
+  return CANONICAL_STORY_STATES.has(canonical) ? canonical : 'draft';
+}
+
+function legacyStoryStatusLabel(status) {
+  const normalized = normalizeCanonicalStoryStatus(status);
+  if (normalized === 'submitted' || normalized === 'in_review') return 'pending-review';
+  if (normalized === 'changes_requested') return 'needs-changes';
+  if (normalized === 'draft') return 'draft';
+  return normalized;
+}
+
+function getRoleNameForRequest(req) {
+  return normalizeRoleName(String(req.user?.role || 'user'), 'user');
+}
+
+function canManageEditorialFields(req) {
+  const role = getRoleNameForRequest(req);
+  return ['admin', 'editor'].includes(role);
+}
+
+function ensureWorkflowTransition(currentStatus, desiredStatus) {
+  const from = normalizeCanonicalStoryStatus(currentStatus);
+  const to = normalizeCanonicalStoryStatus(desiredStatus);
+  const allowed = VALID_STORY_TRANSITIONS[from] || [];
+  if (!allowed.includes(to)) {
+    return {
+      valid: false,
+      reason: `invalid transition: ${from} -> ${to}`,
+      current: from,
+      next: to
+    };
+  }
+  return { valid: true, current: from, next: to };
+}
+
+async function processScheduledStories({ db: providedDb, now = new Date(), actorId = null } = {}) {
+  const activeDb = providedDb || await init();
+  const shouldClose = !providedDb;
+  const effectiveNow = now instanceof Date ? now : new Date(now);
+  const processed = [];
+
+  try {
+    const rows = await activeDb.all(`
+      SELECT s.*, u.username as author
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.status = 'scheduled' AND s.scheduled_at IS NOT NULL
+      ORDER BY s.scheduled_at ASC
+    `);
+
+    for (const story of rows) {
+      if (normalizeCanonicalStoryStatus(story.status) !== 'scheduled') {
+        continue;
+      }
+
+      const scheduledAt = story.scheduled_at ? new Date(story.scheduled_at) : null;
+      if (!scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() > effectiveNow.getTime()) {
+        continue;
+      }
+
+      const previousStatus = normalizeCanonicalStoryStatus(story.status || 'draft');
+      const publishedAt = story.published_at || effectiveNow.toISOString();
+      const updateResult = await activeDb.run(
+        `UPDATE stories SET status = ?, published_at = COALESCE(published_at, ?), published_by = COALESCE(?, published_by), updatedAt = ? WHERE id = ? AND status = ?`,
+        ['published', publishedAt, actorId || null, effectiveNow.toISOString(), story.id, 'scheduled']
+      );
+
+      if (!updateResult || Number(updateResult.changes || 0) === 0) {
+        continue;
+      }
+
+      await recordWorkflowAudit(
+        activeDb,
+        story.id,
+        'scheduled_publish',
+        `Scheduled story published automatically at ${publishedAt}`,
+        previousStatus,
+        'published',
+        actorId || story.published_by || null
+      );
+
+      processed.push({
+        id: story.id,
+        title: story.title,
+        scheduled_at: story.scheduled_at,
+        published_at: publishedAt,
+      });
+    }
+
+    return { processed: processed.length, stories: processed };
+  } finally {
+    if (shouldClose) {
+      await activeDb.close();
+    }
+  }
+}
+
+async function recordWorkflowAudit(db, storyId, action, notes = '', previousStatus = null, nextStatus = null, actorId = null) {
+  const list = await db.all('PRAGMA table_info(revision_history)');
+  const columnNames = list.map((column) => column.name);
+  const values = [storyId, action, notes || '', new Date().toISOString()];
+  const columns = ['story_id', 'action', 'notes', 'created_at'];
+  if (columnNames.includes('actor_id')) {
+    columns.push('actor_id');
+    values.push(actorId || null);
+  }
+  if (columnNames.includes('previous_status')) {
+    columns.push('previous_status');
+    values.push(previousStatus || null);
+  }
+  if (columnNames.includes('new_status')) {
+    columns.push('new_status');
+    values.push(nextStatus || null);
+  }
+  const placeholders = columns.map(() => '?').join(', ');
+  await db.run(`INSERT INTO revision_history (${columns.join(', ')}) VALUES (${placeholders})`, values);
+}
+
+async function makeUniqueStorySlug(db, requestedSlug, title, storyId = null) {
+  const base = String(requestedSlug || title || 'story')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 160) || 'story';
+  let candidate = base;
+  let suffix = 2;
+  while (await db.get('SELECT id FROM stories WHERE slug = ? AND id != COALESCE(?, 0)', [candidate, storyId])) {
+    candidate = `${base}-${suffix++}`;
+  }
+  return candidate;
 }
 
 app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journalist', 'contributor'), async (req, res) => {
   const payload = normalizeStoryPayload(req.body || {});
-  if (!payload.title || !payload.content) return res.status(400).json({ error: 'title and content required' });
+  if (!payload.title) return res.status(400).json({ error: 'headline required' });
   return withDB(async (db) => {
-    const submittedAt = new Date().toISOString();
-    const role = String(req.user?.role || 'user').toLowerCase();
-    const isEditorial = ['admin', 'editor', 'managing-editor', 'sub-editor', 'journalist'].includes(role);
-    const safePayload = {
-      ...payload,
-      featured: isEditorial ? payload.featured : 0,
-      is_breaking: isEditorial ? payload.is_breaking : 0,
-      status: isEditorial ? payload.status : 'draft',
-      editorial_notes: isEditorial ? payload.editorial_notes : ''
-    };
-    const r = await db.run(`
+    const now = new Date().toISOString();
+    const requestedStatus = normalizeCanonicalStoryStatus(payload.status || 'draft');
+    const safeStatus = requestedStatus === 'published' || requestedStatus === 'archived' ? 'draft' : requestedStatus;
+    const slug = await makeUniqueStorySlug(db, payload.slug, payload.title);
+    const result = await db.run(`
       INSERT INTO stories (
-        title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time, is_breaking, featured, status, editorial_notes, updatedAt, slug, seo_title, meta_description, tags, municipality
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [safePayload.title, safePayload.category, safePayload.content, req.user.id, submittedAt, safePayload.excerpt || safePayload.content.slice(0, 160), safePayload.featured_image, safePayload.reading_time, safePayload.is_breaking, safePayload.featured, safePayload.status, safePayload.editorial_notes, submittedAt, safePayload.slug || safePayload.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), safePayload.seo_title, safePayload.meta_description, safePayload.tags, safePayload.municipality]);
-    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [r.lastID]);
+        title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time,
+        status, updatedAt, slug, seo_title, meta_description, tags, municipality, subheadline,
+        image_alt, image_caption, image_credit
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      payload.title, payload.category, payload.content, req.user.id, now, payload.excerpt,
+      payload.featured_image, payload.reading_time, safeStatus, now, slug, payload.seo_title,
+      payload.meta_description, payload.tags, payload.municipality, payload.subheadline,
+      payload.image_alt, payload.image_caption, payload.image_credit,
+    ]);
+    await recordWorkflowAudit(db, result.lastID, 'created', safeStatus === 'draft' ? 'Draft created' : 'Story created', null, safeStatus, req.user.id);
+    const story = await db.get('SELECT s.*, u.username AS author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?', [result.lastID]);
+    story.status = legacyStoryStatusLabel(story.status);
     res.json({ story });
   });
 });
@@ -2026,7 +2220,12 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
 app.get('/api/stories', authMiddleware, async (req, res) => {
   const author = req.query.author;
   return withDB(async (db) => {
+    const role = getRoleNameForRequest(req);
+    const isEditorial = ['admin', 'editor'].includes(role);
     if (author) {
+      if (!isEditorial && String(req.user?.username || '').toLowerCase() !== String(author || '').trim().toLowerCase()) {
+        return res.status(403).json({ error: 'insufficient permissions' });
+      }
       const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE u.username = ? ORDER BY s.submittedAt DESC`, [author]);
       const out = await Promise.all(rows.map(async (r) => {
         const c = await db.get(`SELECT COUNT(*) as cnt FROM comments WHERE story_id = ?`, [r.id]);
@@ -2035,7 +2234,11 @@ app.get('/api/stories', authMiddleware, async (req, res) => {
       }));
       return res.json({ stories: out });
     }
-    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id ORDER BY s.submittedAt DESC`);
+    if (isEditorial) {
+      const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id ORDER BY s.submittedAt DESC`);
+      return res.json({ stories: rows });
+    }
+    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.status = 'published' OR s.author_id = ? ORDER BY s.submittedAt DESC`, [req.user.id]);
     res.json({ stories: rows });
   });
 });
@@ -2043,15 +2246,29 @@ app.get('/api/stories', authMiddleware, async (req, res) => {
 app.put('/api/stories/:id', authMiddleware, async (req, res) => {
   const id = req.params.id;
   const payload = normalizeStoryPayload(req.body || {});
+  const hasStatusChange = req.body && Object.prototype.hasOwnProperty.call(req.body, 'status');
+  const nextStatus = hasStatusChange ? normalizeCanonicalStoryStatus(req.body.status) : normalizeCanonicalStoryStatus('draft');
   return withDB(async (db) => {
     const existing = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
     if (!existing) return res.status(404).json({ error: 'story not found' });
-    const role = String(req.user?.role || 'user').toLowerCase();
-    const isEditorial = ['admin', 'editor', 'managing-editor', 'sub-editor', 'journalist'].includes(role);
-    if (!isEditorial && String(existing.author_id) !== String(req.user.id)) {
+    const isEditorial = canManageEditorialFields(req);
+    const isOwner = String(existing.author_id) === String(req.user.id);
+    if (!isEditorial && !isOwner) {
       return res.status(403).json({ error: 'insufficient permissions' });
     }
+    if (!isEditorial && existing.status !== 'draft' && existing.status !== 'changes_requested') {
+      return res.status(409).json({ error: 'story can only be edited while in draft or changes-requested status' });
+    }
+    if (hasStatusChange) {
+      const transition = ensureWorkflowTransition(existing.status || 'draft', nextStatus);
+      if (!transition.valid) {
+        return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+      }
+    }
     const updatedAt = new Date().toISOString();
+    const nextFeatured = canManageEditorialFields(req) && payload.featured ? 1 : Number(existing.featured || 0);
+    const nextBreaking = canManageEditorialFields(req) && payload.is_breaking ? 1 : Number(existing.is_breaking || 0);
+    const statusValue = hasStatusChange ? nextStatus : normalizeCanonicalStoryStatus(existing.status || 'draft');
     const fields = [
       ['title', payload.title || existing.title],
       ['category', payload.category || existing.category || 'News'],
@@ -2059,10 +2276,10 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
       ['excerpt', payload.excerpt || (payload.content || existing.content || '').slice(0, 160)],
       ['featured_image', payload.featured_image || existing.featured_image || ''],
       ['reading_time', Number(payload.reading_time || existing.reading_time || 5)],
-      ['is_breaking', isEditorial ? payload.is_breaking : Number(existing.is_breaking || 0)],
-      ['featured', isEditorial ? payload.featured : Number(existing.featured || 0)],
-      ['status', isEditorial ? payload.status : existing.status || 'draft'],
-      ['editorial_notes', isEditorial ? payload.editorial_notes : existing.editorial_notes || ''],
+      ['is_breaking', nextBreaking],
+      ['featured', nextFeatured],
+      ['status', statusValue],
+      ['editorial_notes', payload.editorial_notes || existing.editorial_notes || ''],
       ['updatedAt', updatedAt],
       ['slug', payload.slug || (payload.title || existing.title || 'story').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')],
       ['seo_title', payload.seo_title || existing.seo_title || ''],
@@ -2075,9 +2292,293 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
     values.push(id);
     await db.run(`UPDATE stories SET ${assignments} WHERE id = ?`, values);
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    story.status = legacyStoryStatusLabel(story.status);
+    if (payload.title || payload.content || payload.excerpt || hasStatusChange) {
+      await recordWorkflowAudit(db, story.id, 'story_updated', 'Story updated by author or editor', existing.status || 'draft', story.status || 'draft', req.user.id);
+    }
     res.json({ story });
   });
 });
+
+app.post('/api/stories/:id/submit', authMiddleware, async (req, res) => {
+  const id = req.params.id;
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const role = getRoleNameForRequest(req);
+    const isOwner = Number(story.author_id) === Number(req.user.id);
+    if (!isOwner || !['admin', 'editor', 'journalist', 'contributor'].includes(role)) {
+      return res.status(403).json({ error: 'insufficient permissions' });
+    }
+    if (!story.title || !story.content) {
+      return res.status(400).json({ error: 'title and content required before submission' });
+    }
+    const targetStatus = normalizeCanonicalStoryStatus('submitted');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, updatedAt = ? WHERE id = ?`, [targetStatus, updatedAt, id]);
+    await recordWorkflowAudit(db, id, 'submitted_for_review', 'Story submitted for editorial review', story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.get('/api/editorial/queue', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.status IN ('submitted', 'in_review', 'changes_requested', 'approved', 'scheduled', 'published') ORDER BY s.submittedAt DESC`);
+    const stories = rows.map((story) => ({ ...story, status: legacyStoryStatusLabel(story.status) }));
+    res.json({ stories });
+  });
+});
+
+app.post('/api/editorial/stories/:id/review', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const notes = String(req.body?.notes || '').trim();
+  const targetStatus = normalizeCanonicalStoryStatus(req.body?.status || 'in_review');
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [targetStatus, notes || story.editorial_notes || '', updatedAt, id]);
+    await recordWorkflowAudit(db, id, 'review_started', notes || 'Review started by editor', story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/request-changes', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const notes = String(req.body?.notes || '').trim();
+  if (!notes) return res.status(400).json({ error: 'review notes required' });
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const targetStatus = normalizeCanonicalStoryStatus('changes_requested');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [targetStatus, notes, updatedAt, id]);
+    await recordWorkflowAudit(db, id, 'changes_requested', notes, story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/approve', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const notes = String(req.body?.notes || '').trim();
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const role = getRoleNameForRequest(req);
+    if (Number(story.author_id) === Number(req.user.id) && ['contributor', 'journalist'].includes(role)) {
+      return res.status(403).json({ error: 'authors cannot approve their own story' });
+    }
+    const targetStatus = normalizeCanonicalStoryStatus('approved');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [targetStatus, notes || story.editorial_notes || '', updatedAt, id]);
+    await recordWorkflowAudit(db, id, 'approved', notes || 'Story approved by editor', story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/schedule', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const scheduledAtValue = String(req.body?.scheduled_at || req.body?.publish_at || req.body?.date || '').trim();
+  if (!scheduledAtValue) {
+    return res.status(400).json({ error: 'scheduled publication time required' });
+  }
+
+  const scheduledAt = new Date(scheduledAtValue);
+  if (Number.isNaN(scheduledAt.getTime())) {
+    return res.status(400).json({ error: 'invalid scheduled publication time' });
+  }
+
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+
+    const targetStatus = normalizeCanonicalStoryStatus('scheduled');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+
+    const updatedAt = new Date().toISOString();
+    const isoScheduled = scheduledAt.toISOString();
+    await db.run(`UPDATE stories SET status = ?, scheduled_at = ?, updatedAt = ? WHERE id = ?`, [targetStatus, isoScheduled, updatedAt, id]);
+    await recordWorkflowAudit(db, id, 'scheduled', `Scheduled for publication at ${isoScheduled}`, story.status || 'draft', targetStatus, req.user.id);
+
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/publish', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const targetStatus = normalizeCanonicalStoryStatus(req.body?.status || 'published');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const publishedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, published_at = ?, updatedAt = ? WHERE id = ?`, [targetStatus, publishedAt, publishedAt, id]);
+    await recordWorkflowAudit(db, id, 'published', 'Story published', story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/archive', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const reason = String(req.body?.reason || '').trim();
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    const targetStatus = normalizeCanonicalStoryStatus('archived');
+    const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
+    const archivedAt = new Date().toISOString();
+    await db.run(`UPDATE stories SET status = ?, archived_at = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [targetStatus, archivedAt, reason || story.editorial_notes || 'Archived by editor', archivedAt, id]);
+    await recordWorkflowAudit(db, id, 'archived', reason || 'Story archived', story.status || 'draft', targetStatus, req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    updatedStory.status = legacyStoryStatusLabel(updatedStory.status);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/feature', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const featured = Boolean(req.body?.featured ?? req.body?.value ?? true);
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    if (featured && story.status !== 'published') {
+      return res.status(409).json({ error: 'featured stories must be published first' });
+    }
+    await db.run(`UPDATE stories SET featured = ?, updatedAt = ? WHERE id = ?`, [featured ? 1 : 0, new Date().toISOString(), id]);
+    await recordWorkflowAudit(db, id, 'featured_changed', featured ? 'Story featured by editor' : 'Story unfeatured by editor', story.status || 'draft', story.status || 'draft', req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.post('/api/editorial/stories/:id/breaking', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const breaking = Boolean(req.body?.is_breaking ?? req.body?.breaking ?? true);
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    if (breaking && story.status !== 'published') {
+      return res.status(409).json({ error: 'breaking stories must be published first' });
+    }
+    await db.run(`UPDATE stories SET is_breaking = ?, updatedAt = ? WHERE id = ?`, [breaking ? 1 : 0, new Date().toISOString(), id]);
+    await recordWorkflowAudit(db, id, 'breaking_changed', breaking ? 'Story marked breaking by editor' : 'Breaking flag removed by editor', story.status || 'draft', story.status || 'draft', req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    res.json({ story: updatedStory });
+  });
+});
+
+app.patch('/api/corrections/:id', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const { status, notes } = req.body || {};
+  const nextStatus = String(status || '').trim().toLowerCase();
+  if (!['new', 'reviewing', 'resolved', 'rejected'].includes(nextStatus)) {
+    return res.status(400).json({ error: 'invalid correction status' });
+  }
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM correction_requests WHERE id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'correction request not found' });
+    const updatedAt = new Date().toISOString();
+    await db.run(`UPDATE correction_requests SET status = ?, updated_at = ?, description = COALESCE(?, description) WHERE id = ?`, [nextStatus, updatedAt, notes || existing.description, id]);
+    res.json({ correction: await db.get(`SELECT * FROM correction_requests WHERE id = ?`, [id]) });
+  });
+});
+
+app.post('/api/stories/:id/correct', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = req.params.id;
+  const { title, content, excerpt, notes } = req.body || {};
+  if (!content && !title && !excerpt) {
+    return res.status(400).json({ error: 'correction details required' });
+  }
+  return withDB(async (db) => {
+    const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
+    if (story.status !== 'published') {
+      return res.status(409).json({ error: 'only published stories can be corrected' });
+    }
+    const updatedAt = new Date().toISOString();
+    const fields = [];
+    const values = [];
+    if (title) { fields.push('title = ?'); values.push(String(title).slice(0, 180)); }
+    if (content) { fields.push('content = ?'); values.push(String(content)); }
+    if (excerpt) { fields.push('excerpt = ?'); values.push(String(excerpt).slice(0, 260)); }
+    fields.push('updatedAt = ?');
+    values.push(updatedAt);
+    await db.run(`UPDATE stories SET ${fields.join(', ')} WHERE id = ?`, [...values, id]);
+    await recordWorkflowAudit(db, id, 'corrected', notes || 'Published story corrected by editor', 'published', 'published', req.user.id);
+    const updatedStory = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    res.json({ story: updatedStory });
+  });
+});
+
+function analyzeStoryEditorially(story = {}) {
+  const body = sanitizeHtml(String(story.content || ''), { allowedTags: [], allowedAttributes: {} });
+  const words = countWords(body);
+  const hasImage = Boolean(story.featured_image);
+  const hasMetadata = Boolean(story.meta_description || story.seo_title);
+  const quality = Math.max(0, Math.min(100, Math.round((Math.min(words, 700) / 7) + (hasImage ? 10 : 0) + (hasMetadata ? 10 : 0))));
+  const recommendations = [
+    words < 100 ? 'Editorial review: add more reporting detail before submission.' : '',
+    !hasImage ? 'Add a featured image.' : '',
+    !hasMetadata ? 'Complete the SEO title and description.' : '',
+    !story.municipality ? 'Add municipality context where relevant.' : '',
+    !story.tags ? 'Add tags to improve discovery.' : '',
+  ].filter(Boolean).join(' ');
+  return {
+    quality_score: quality,
+    grammar_score: 0,
+    readability_score: 0,
+    seo_score: hasMetadata ? 100 : 0,
+    originality_score: 0,
+    headline_score: story.title ? 100 : 0,
+    human_writing_confidence: 0,
+    ai_writing_probability: 0,
+    confidence_level: 'low',
+    fact_check_status: 'needs-verification',
+    sources_count: 0,
+    quotes_count: 0,
+    images_count: hasImage ? 1 : 0,
+    reading_time: estimateReadingTime(body),
+    recommendations,
+    notes: 'Automated indicators are advisory and do not establish authorship or factual accuracy.',
+  };
+}
 
 app.get('/api/stories/:id/editorial-analysis', authMiddleware, async (req, res) => {
   const id = req.params.id;
@@ -2147,31 +2648,41 @@ app.post('/api/stories/:id/editorial-review', authMiddleware, requireRole('admin
 
     const statusMap = {
       approve: 'approved',
-      'request-changes': 'needs-changes',
-      reject: 'rejected',
+      'request-changes': 'changes_requested',
+      'request_changes': 'changes_requested',
+      reject: 'changes_requested',
       publish: 'published',
       schedule: 'scheduled',
-      'pending-review': 'pending-review',
-      'fact-check': 'fact-check',
+      'pending-review': 'submitted',
+      'fact-check': 'in_review',
+      submitted: 'submitted',
+      changes_requested: 'changes_requested',
+      in_review: 'in_review',
+      approved: 'approved',
     };
-    const nextStatus = statusMap[action] || 'approved';
+    const canonicalStatus = normalizeCanonicalStoryStatus(statusMap[action] || 'approved');
+    const transition = ensureWorkflowTransition(existing.status || 'draft', canonicalStatus);
+    if (!transition.valid) {
+      return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
+    }
     const updatedAt = new Date().toISOString();
-    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [nextStatus, notes || existing.editorial_notes || '', updatedAt, id]);
+    await db.run(`UPDATE stories SET status = ?, editorial_notes = ?, updatedAt = ? WHERE id = ?`, [canonicalStatus, notes || existing.editorial_notes || '', updatedAt, id]);
 
     const review = await db.get(`SELECT * FROM editorial_reviews WHERE story_id = ?`, [id]);
     if (review) {
       await db.run(`UPDATE editorial_reviews SET notes = ?, updated_at = ? WHERE story_id = ?`, [notes || review.notes || '', updatedAt, id]);
     }
-    await db.run(`INSERT INTO revision_history (story_id, action, notes, created_at) VALUES (?, ?, ?, ?)`, [id, action, notes, updatedAt]);
+    await recordWorkflowAudit(db, id, action, notes || 'Editorial review action', existing.status || 'draft', canonicalStatus, req.user.id);
 
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
+    story.status = legacyStoryStatusLabel(story.status);
     res.json({
       story,
       review: {
         ...(review || {}),
         action,
         notes,
-        status: nextStatus,
+        status: story.status,
         disclaimer: 'This score is an estimate and should only assist editorial decision-making. It is not proof that the content was written by artificial intelligence.',
       }
     });
@@ -2180,11 +2691,11 @@ app.post('/api/stories/:id/editorial-review', authMiddleware, requireRole('admin
 
 app.get('/api/editorial/overview', authMiddleware, requireRole('admin', 'editor', 'sub-editor'), async (req, res) => {
   return withDB(async (db) => {
-    const pendingReview = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status IN ('pending-review', 'fact-check')`);
-    const needsChanges = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'needs-changes'`);
+    const pendingReview = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status IN ('submitted', 'in_review')`);
+    const needsChanges = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'changes_requested'`);
     const approved = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'approved'`);
     const published = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'published'`);
-    const rejected = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'rejected'`);
+    const rejected = await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status IN ('rejected', 'changes_requested')`);
     const avgQuality = await db.get(`SELECT AVG(quality_score) as average FROM editorial_reviews`);
     const avgGrammar = await db.get(`SELECT AVG(grammar_score) as average FROM editorial_reviews`);
     const avgSeo = await db.get(`SELECT AVG(seo_score) as average FROM editorial_reviews`);
@@ -3034,6 +3545,25 @@ app.get('/api/latest-stories', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
+  const shouldProcessScheduledStories = process.argv.includes('--process-scheduled-stories');
+  if (shouldProcessScheduledStories) {
+    initializeDatabase()
+      .then(async () => {
+        const db = await init();
+        try {
+          const result = await processScheduledStories({ db });
+          console.log(JSON.stringify({ processed: result.processed, stories: result.stories }));
+        } finally {
+          await db.close();
+        }
+      })
+      .catch((error) => {
+        console.error('Scheduled publication processing failed:', error);
+        process.exit(1);
+      });
+    return;
+  }
+
   initializeDatabase()
     .then(() => app.listen(PORT, () => console.log(`API listening on ${PORT}`)))
     .catch((error) => {
@@ -3043,5 +3573,7 @@ if (require.main === module) {
 }
 
 app.initializeDatabase = initializeDatabase;
+app.processScheduledStories = processScheduledStories;
 module.exports = app;
 module.exports.initializeDatabase = initializeDatabase;
+module.exports.processScheduledStories = processScheduledStories;
