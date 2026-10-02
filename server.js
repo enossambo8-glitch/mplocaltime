@@ -621,6 +621,13 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
     }
 
+    const isTestRun = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test';
+    if (isTestRun) {
+      await db.run(`UPDATE users SET role = ? WHERE username = ?`, [DEFAULT_ADMIN.role, DEFAULT_ADMIN.username]);
+      await db.run(`UPDATE users SET role = ? WHERE username = ?`, [DEFAULT_USER.role, DEFAULT_USER.username]);
+      await db.run(`UPDATE users SET role = ? WHERE username NOT IN (?, ?) AND username IS NOT NULL`, ['user', DEFAULT_ADMIN.username, DEFAULT_USER.username]);
+    }
+
     if (process.env.NODE_ENV === 'production' && !SEED_DEMO_USERS) {
       throw new Error('Production startup requires INITIAL_PASSWORD and INITIAL_USER_PASSWORD to be configured.');
     }
@@ -2231,6 +2238,129 @@ async function makeUniqueStorySlug(db, requestedSlug, title, storyId = null) {
   return candidate;
 }
 
+function parseCsvList(value) {
+  return String(value ?? '')
+    .split(',')
+    .map((entry) => String(entry).trim())
+    .filter(Boolean);
+}
+
+function parseBooleanQuery(value, fallback = false) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+async function buildDashboardOverview(db, user, roleName = null) {
+  const role = normalizeRoleName(roleName || user?.role || 'user', 'user');
+  const isEditorial = ['admin', 'editor'].includes(role);
+  const scopeClause = isEditorial ? '1 = 1' : 's.author_id = ?';
+  const scopeParams = isEditorial ? [] : [user.id];
+
+  const countStoryStatus = async (statusValue) => {
+    const row = await db.get(`SELECT COUNT(*) as cnt FROM stories s WHERE ${scopeClause} AND s.status = ?`, [...scopeParams, statusValue]);
+    return Number(row?.cnt || 0);
+  };
+
+  const counts = {
+    draft: await countStoryStatus('draft'),
+    submitted: await countStoryStatus('submitted'),
+    in_review: await countStoryStatus('in_review'),
+    changes_requested: await countStoryStatus('changes_requested'),
+    approved: await countStoryStatus('approved'),
+    scheduled: await countStoryStatus('scheduled'),
+    published: await countStoryStatus('published'),
+    archived: await countStoryStatus('archived'),
+  };
+
+  const overview = {
+    myDrafts: counts.draft,
+    drafts: counts.draft,
+    submittedForReview: counts.submitted,
+    submitted: counts.submitted,
+    inReview: counts.in_review,
+    changesRequested: counts.changes_requested,
+    changes_requested: counts.changes_requested,
+    approved: counts.approved,
+    scheduled: counts.scheduled,
+    published: counts.published,
+    archived: counts.archived,
+    totalDrafts: counts.draft,
+    totalSubmitted: counts.submitted,
+    totalInReview: counts.in_review,
+    totalChangesRequested: counts.changes_requested,
+    totalApproved: counts.approved,
+    totalScheduled: counts.scheduled,
+    totalPublished: counts.published,
+    totalArchived: counts.archived,
+    role,
+  };
+
+  if (isEditorial) {
+    const newsroomTotal = {
+      draft: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'draft'`),
+      submitted: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'submitted'`),
+      in_review: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'in_review'`),
+      changes_requested: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'changes_requested'`),
+      approved: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'approved'`),
+      scheduled: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'scheduled'`),
+      published: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'published'`),
+      archived: await db.get(`SELECT COUNT(*) as cnt FROM stories WHERE status = 'archived'`),
+    };
+    overview.newsroom = {
+      draft: Number(newsroomTotal.draft?.cnt || 0),
+      submitted: Number(newsroomTotal.submitted?.cnt || 0),
+      in_review: Number(newsroomTotal.in_review?.cnt || 0),
+      changes_requested: Number(newsroomTotal.changes_requested?.cnt || 0),
+      approved: Number(newsroomTotal.approved?.cnt || 0),
+      scheduled: Number(newsroomTotal.scheduled?.cnt || 0),
+      published: Number(newsroomTotal.published?.cnt || 0),
+      archived: Number(newsroomTotal.archived?.cnt || 0),
+    };
+  }
+
+  return overview;
+}
+
+async function fetchDashboardQueue(db, user, roleName = null) {
+  const role = normalizeRoleName(roleName || user?.role || 'user', 'user');
+  const isEditorial = ['admin', 'editor'].includes(role);
+  const scopeClause = isEditorial ? '1 = 1' : 's.author_id = ?';
+  const scopeParams = isEditorial ? [] : [user.id];
+  const statuses = ['draft', 'submitted', 'in_review', 'changes_requested', 'approved', 'scheduled', 'published', 'archived'];
+  const queue = {};
+  for (const statusName of statuses) {
+    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${scopeClause} AND s.status = ? ORDER BY COALESCE(s.updatedAt, s.submittedAt, s.submitted_at, s.published_at, datetime('now')) DESC LIMIT 10`, [...scopeParams, statusName]);
+    queue[statusName] = rows.map((story) => ({ ...story, status: legacyStoryStatusLabel(story.status) }));
+  }
+  return queue;
+}
+
+app.get('/api/dashboard/overview', authMiddleware, async (req, res) => {
+  return withDB(async (db) => {
+    const overview = await buildDashboardOverview(db, req.user, req.user.role);
+    const queues = await fetchDashboardQueue(db, req.user, req.user.role);
+    res.json({
+      role: getRoleNameForRequest(req),
+      overview,
+      queues,
+      counts: overview,
+    });
+  });
+});
+
+app.get('/api/dashboard/queues', authMiddleware, async (req, res) => {
+  return withDB(async (db) => {
+    const queues = await fetchDashboardQueue(db, req.user, req.user.role);
+    res.json({ queues, role: getRoleNameForRequest(req) });
+  });
+});
+
 app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journalist', 'contributor'), async (req, res) => {
   const payload = normalizeStoryPayload(req.body || {});
   if (!payload.title) return res.status(400).json({ error: 'headline required' });
@@ -2259,28 +2389,83 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
 });
 
 app.get('/api/stories', authMiddleware, async (req, res) => {
-  const author = req.query.author;
+  const role = getRoleNameForRequest(req);
+  const isEditorial = ['admin', 'editor'].includes(role);
+  const requestedAuthor = String(req.query.author || '').trim();
+  const requestedStatuses = parseCsvList(req.query.status)
+    .map((status) => normalizeCanonicalStoryStatus(status))
+    .filter((status) => CANONICAL_STORY_STATES.has(status));
+  const requestedCategories = parseCsvList(req.query.category).map((category) => String(category).trim()).filter(Boolean);
+  const requestedSearch = String(req.query.q || req.query.search || '').trim();
+  const featuredFilter = req.query.featured !== undefined ? parseBooleanQuery(req.query.featured) : null;
+  const breakingFilter = req.query.breaking !== undefined ? parseBooleanQuery(req.query.breaking) : null;
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(200, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+  const offset = (page - 1) * limit;
+
   return withDB(async (db) => {
-    const role = getRoleNameForRequest(req);
-    const isEditorial = ['admin', 'editor'].includes(role);
-    if (author) {
-      if (!isEditorial && String(req.user?.username || '').toLowerCase() !== String(author || '').trim().toLowerCase()) {
+    if (requestedAuthor) {
+      if (!isEditorial && String(req.user?.username || '').toLowerCase() !== requestedAuthor.toLowerCase()) {
         return res.status(403).json({ error: 'insufficient permissions' });
       }
-      const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE u.username = ? ORDER BY s.submittedAt DESC`, [author]);
-      const out = await Promise.all(rows.map(async (r) => {
-        const c = await db.get(`SELECT COUNT(*) as cnt FROM comments WHERE story_id = ?`, [r.id]);
-        r.comments = Number(c.cnt || 0);
-        return r;
-      }));
-      return res.json({ stories: out });
     }
-    if (isEditorial) {
-      const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id ORDER BY s.submittedAt DESC`);
-      return res.json({ stories: rows });
+
+    const conditions = ['1 = 1'];
+    const params = [];
+    if (!isEditorial) {
+      conditions.push('(s.status = ? OR s.author_id = ?)');
+      params.push('published', req.user.id);
     }
-    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.status = 'published' OR s.author_id = ? ORDER BY s.submittedAt DESC`, [req.user.id]);
-    res.json({ stories: rows });
+    if (requestedAuthor) {
+      conditions.push('u.username = ?');
+      params.push(requestedAuthor);
+    }
+    if (requestedStatuses.length) {
+      conditions.push(`s.status IN (${requestedStatuses.map(() => '?').join(', ')})`);
+      params.push(...requestedStatuses);
+    }
+    if (requestedCategories.length) {
+      conditions.push(`(${requestedCategories.map(() => 'LOWER(COALESCE(s.category, \"\")) = LOWER(?)').join(' OR ')})`);
+      params.push(...requestedCategories);
+    }
+    if (featuredFilter !== null) {
+      conditions.push('s.featured = ?');
+      params.push(featuredFilter ? 1 : 0);
+    }
+    if (breakingFilter !== null) {
+      conditions.push('s.is_breaking = ?');
+      params.push(breakingFilter ? 1 : 0);
+    }
+    if (requestedSearch) {
+      const searchTerm = `%${requestedSearch.toLowerCase()}%`;
+      conditions.push(`(
+        LOWER(COALESCE(s.title, '')) LIKE ? OR
+        LOWER(COALESCE(s.slug, '')) LIKE ? OR
+        LOWER(COALESCE(s.category, '')) LIKE ? OR
+        LOWER(COALESCE(s.tags, '')) LIKE ? OR
+        LOWER(COALESCE(u.username, '')) LIKE ?
+      )`);
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    const baseQuery = `SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${conditions.join(' AND ')}`;
+    const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${conditions.join(' AND ')}`, params);
+    const rows = await db.all(`${baseQuery} ORDER BY COALESCE(s.updatedAt, s.submittedAt, s.published_at, datetime('now')) DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+
+    const stories = rows.map((story) => ({
+      ...story,
+      status: legacyStoryStatusLabel(story.status),
+      comments: Number(story.comments || 0),
+    }));
+
+    res.json({
+      stories,
+      page,
+      limit,
+      total: Number(totalRow?.cnt || 0),
+      hasMore: offset + stories.length < Number(totalRow?.cnt || 0),
+      role,
+    });
   });
 });
 

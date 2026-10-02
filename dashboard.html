@@ -1,24 +1,60 @@
 <!doctype html>
 <html lang="en-ZA">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Contributor Dashboard | Mpumalanga Local Time</title>
-  <meta name="description" content="Contributor dashboard for Mpumalanga Local Time, where authors can review stories and comments." />
-  <link rel="canonical" href="https://mplocaltime.co.za/dashboard.html">
-  <link rel="stylesheet" href="/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Newsroom Dashboard | Mpumalanga Local Time</title>
+  <meta name="description" content="Newsroom dashboard for managing drafts, review, publishing and archived newsroom content." />
+  <link rel="canonical" href="https://mplocaltime.co.za/dashboard.html" />
+  <link rel="stylesheet" href="/styles.css" />
   <script defer src="/main.js"></script>
+  <style>
+    body { background: #f5f1ea; }
+    .newsroom-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 24px; padding: 32px 0 60px; }
+    .newsroom-sidebar { position: sticky; top: 24px; align-self: start; }
+    .newsroom-nav { display: grid; gap: 10px; }
+    .newsroom-nav a { display: block; padding: 10px 12px; border-radius: 12px; text-decoration: none; color: #1f2933; background: #fff; border: 1px solid #e5e7eb; }
+    .newsroom-nav a:hover, .newsroom-nav a:focus-visible { background: #f3f4f6; }
+    .dashboard-hero { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .eyebrow { letter-spacing: .08em; text-transform: uppercase; font-size: .72rem; color: #7a5a2d; font-weight: 700; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 22px 0; }
+    .stat-card { display: block; text-decoration: none; color: inherit; background: #fff; border: 1px solid #e5e7eb; border-radius: 18px; padding: 16px; box-shadow: 0 10px 24px rgba(17, 24, 39, 0.04); }
+    .stat-card strong { font-size: 1.7rem; display: block; margin-bottom: 8px; }
+    .stat-card span { color: #4b5563; }
+    .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 22px; padding: 20px; box-shadow: 0 18px 34px rgba(17, 24, 39, 0.04); }
+    .panel + .panel { margin-top: 22px; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .queue-list { display: grid; gap: 12px; }
+    .story-item { border: 1px solid #e7e5e4; border-radius: 16px; padding: 14px; background: #fffaf5; }
+    .story-item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .story-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 10px 16px; border: 1px solid #d1d5db; background: #fff; color: #111827; font-weight: 600; cursor: pointer; }
+    .btn.primary { background: #b71c1c; color: white; border-color: #b71c1c; }
+    .btn.secondary { background: #1f2937; color: white; border-color: #1f2937; }
+    .btn.small { padding: 8px 12px; font-size: .86rem; }
+    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #f3f4f6; color: #374151; font-size: .75rem; font-weight: 700; }
+    .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    label { display: grid; gap: 8px; font-weight: 600; color: #374151; }
+    input, textarea, select { width: 100%; border: 1px solid #d1d5db; border-radius: 12px; padding: 11px 12px; font: inherit; color: #111827; background: #fff; }
+    textarea { min-height: 120px; resize: vertical; }
+    .status-banner { border-radius: 12px; padding: 10px 12px; background: #fff7ed; border: 1px solid #fed7aa; color: #9a4b00; }
+    .muted { color: #6b7280; }
+    @media (max-width: 900px) {
+      .newsroom-shell { grid-template-columns: 1fr; }
+      .newsroom-sidebar { position: static; }
+    }
+  </style>
 </head>
 <body>
   <header class="site-header">
     <div class="container navbar">
       <div class="site-branding">
         <a href="/" aria-label="Mpumalanga Local Time home">
-          <div style="display:flex;align-items:center;gap:12px">
-            <img src="/logo.png" alt="Mpumalanga Local Time logo">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <img src="/logo.png" alt="Mpumalanga Local Time logo" />
             <div>
               <strong class="site-title">Mpumalanga Local Time</strong>
-              <span class="site-tagline">Contributor dashboard</span>
+              <span class="site-tagline">Newsroom dashboard</span>
             </div>
           </div>
         </a>
@@ -27,250 +63,217 @@
       <nav class="nav-primary" id="primary-navigation" aria-label="Primary navigation">
         <a href="/">Home</a>
         <a href="/news.html">News</a>
-        <a href="/business.html">Business</a>
-        <a href="/creative-marketplace">Marketplace</a>
-        <a href="/creative-marketplace/listings">Listings</a>
-        <a href="/creatives">Creatives</a>
-        <a href="/arts.html">Arts</a>
-        <a href="/sports.html">Sports</a>
-        <a href="/community.html">Community</a>
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/login.html">Login</a>
       </nav>
     </div>
   </header>
 
-  <main class="container" style="padding: 40px 0;">
-    <section class="card">
-      <div class="card-content">
-        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;">
-          <div>
-            <h1 class="section-title">Contributor Dashboard</h1>
-            <p class="section-subtitle">Monitor your submissions, update workflow states, and keep your newsroom work moving.</p>
-            <div id="welcome" class="meta"></div>
-            <div id="profileStats" class="meta" style="margin-top:12px;"></div>
-          </div>
-          <div>
-            <button id="logoutButton" class="btn secondary">Logout</button>
-          </div>
+  <main class="container newsroom-shell">
+    <aside class="newsroom-sidebar">
+      <div class="panel">
+        <h2 style="margin-top:0;">Newsroom</h2>
+        <nav class="newsroom-nav" id="newsroomNav" aria-label="Newsroom navigation"></nav>
+      </div>
+    </aside>
+
+    <section style="min-width:0;">
+      <div class="dashboard-hero">
+        <div>
+          <div class="eyebrow">MLT newsroom</div>
+          <h1 style="margin:0;">Dashboard</h1>
+          <div id="welcome" class="muted">Loading profile…</div>
         </div>
+        <button id="logoutButton" class="btn secondary" type="button">Logout</button>
       </div>
-    </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Create story</h2>
-        <form id="storyForm" style="display:grid;gap:16px;">
-          <label>
-            <span>Title</span>
-            <input id="storyTitle" name="title" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Category</span>
-            <input id="storyCategory" name="category" type="text" placeholder="News, Business, Arts, Sports" value="News" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Content</span>
-            <textarea id="storyContent" name="content" rows="8" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;resize:vertical;"></textarea>
-          </label>
-          <label>
-            <span>Status</span>
-            <input name="status" type="text" placeholder="draft" value="draft" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <button class="btn primary" type="submit">Publish story</button>
-            <span id="createStoryMessage" style="color:#a00;"></span>
+      <div id="statusBanner" class="status-banner" aria-live="polite" style="display:none; margin-top:16px;"></div>
+
+      <div id="summaryGrid" class="stat-grid" aria-live="polite"></div>
+
+      <section class="panel" id="create-story-panel">
+        <div class="panel-header">
+          <h2 style="margin:0;">Create Article</h2>
+        </div>
+
+        <form id="storyForm">
+          <div class="field-row">
+            <label>
+              Headline
+              <input name="title" type="text" required placeholder="Story headline" />
+            </label>
+            <label>
+              Category
+              <select name="category">
+                <option value="News">News</option>
+                <option value="Community">Community</option>
+                <option value="Business">Business</option>
+                <option value="Arts">Arts</option>
+                <option value="Sports">Sports</option>
+                <option value="Health">Health</option>
+                <option value="Education">Education</option>
+              </select>
+            </label>
           </div>
-        </form>
-      </div>
-    </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Search newsroom</h2>
-        <input id="searchInput" placeholder="Search stories" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-        <div id="searchResults" style="margin-top:14px;"></div>
-      </div>
-    </section>
+          <div class="field-row" style="margin-top:12px;">
+            <label>
+              Slug
+              <input name="slug" type="text" placeholder="story-slug" />
+            </label>
+            <label>
+              Excerpt
+              <input name="excerpt" type="text" maxlength="260" placeholder="Short summary" />
+            </label>
+          </div>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Send notification</h2>
-        <form id="notificationForm" style="display:grid;gap:14px;">
-          <label>
-            <span>Title</span>
-            <input name="title" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Body</span>
-            <textarea name="body" rows="4" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;resize:vertical;"></textarea>
-          </label>
-          <label>
-            <span>Category</span>
-            <input name="category" type="text" placeholder="Community" value="Community" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <label>
-            <span>Province</span>
-            <input name="province" type="text" placeholder="Mpumalanga" value="Mpumalanga" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
-          </label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <button class="btn primary" type="submit">Send notification</button>
-            <span id="notificationMessage" style="color:#a00;"></span>
+          <div style="margin-top:12px;">
+            <label>
+              Story body
+              <textarea name="content" required placeholder="Write the article body here."></textarea>
+            </label>
+          </div>
+
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+            <button class="btn primary" type="submit">Save draft</button>
+            <button class="btn secondary" type="button" id="saveAndSubmitButton">Save and submit</button>
           </div>
         </form>
-      </div>
-    </section>
+      </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Recent notifications</h2>
-        <div id="notificationList">
-          <p>Loading notifications…</p>
+      <section class="panel" id="content-manager">
+        <div class="panel-header">
+          <h2 style="margin:0;">Content Manager</h2>
         </div>
-      </div>
-    </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Contributor performance</h2>
-        <div id="contributorPerformance" style="display:grid; gap:12px;"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Your stories</h2>
-        <div id="storyArea">
-          <p>Loading stories…</p>
+        <div class="field-row" style="margin-bottom: 12px;">
+          <label>
+            Search
+            <input id="storySearch" type="search" placeholder="Headline, slug, author, tag" />
+          </label>
+          <label>
+            Status
+            <select id="statusFilter">
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="submitted">Submitted</option>
+              <option value="in_review">In review</option>
+              <option value="changes_requested">Changes requested</option>
+              <option value="approved">Approved</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <select id="categoryFilter">
+              <option value="">All categories</option>
+              <option value="News">News</option>
+              <option value="Community">Community</option>
+              <option value="Business">Business</option>
+              <option value="Arts">Arts</option>
+              <option value="Sports">Sports</option>
+              <option value="Health">Health</option>
+              <option value="Education">Education</option>
+            </select>
+          </label>
         </div>
-      </div>
-    </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Analytics snapshot</h2>
-        <div id="analyticsArea">
-          <p>Loading analytics…</p>
+        <div id="storyList" class="queue-list" aria-live="polite"></div>
+        <div class="panel-header" id="storyPagination" style="margin-top:16px; display:none;">
+          <button id="storyPrevPage" class="btn small" type="button">Previous</button>
+          <span id="storyPageSummary" class="muted">Page 1</span>
+          <button id="storyNextPage" class="btn small" type="button">Next</button>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="card">
-      <div class="card-content">
-        <h2>Editor analytics dashboard</h2>
-        <div id="editorAnalytics" style="display:grid; gap:14px;"></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <h2>Editorial standards & trust</h2>
-        <p class="meta">Use these resources to keep publishing aligned with newsroom standards, AI governance and reader trust expectations.</p>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
-          <a class="btn primary" href="/trust-centre.html">Trust Centre</a>
-          <a class="btn" href="/editorial-policy.html">Editorial Policy</a>
-          <a class="btn" href="/ai-usage-policy.html">AI Usage Policy</a>
-          <a class="btn" href="/corrections-policy.html">Corrections Policy</a>
+      <section class="panel" id="review-queue-panel">
+        <div class="panel-header">
+          <h2 style="margin:0;">Editorial Review Queue</h2>
         </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-content">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-          <h2 style="margin:0;">Editorial review queue</h2>
-          <div id="editorialQueueStatus" class="meta"></div>
-        </div>
-        <div id="editorialOverview" style="margin-top:12px;"></div>
-        <div id="editorialQueue" style="margin-top:14px;"></div>
-      </div>
+        <div id="reviewQueue" class="queue-list" aria-live="polite"></div>
+      </section>
     </section>
   </main>
 
-  <footer class="footer" role="contentinfo">
-    <div class="container">
-      <div class="footer-grid">
-        <div>
-          <h4>Resources</h4>
-          <ul>
-            <li><a href="/about.html">About</a></li>
-            <li><a href="/privacy-policy.html">Privacy Policy</a></li>
-            <li><a href="/terms-and-conditions.html">Terms</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Sections</h4>
-          <ul>
-            <li><a href="/news.html">News</a></li>
-            <li><a href="/business.html">Business</a></li>
-            <li><a href="/arts.html">Arts</a></li>
-            <li><a href="/sports.html">Sports</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Support</h4>
-          <ul>
-            <li><a href="/privacy-statement.html">Privacy Statement</a></li>
-            <li><a href="/accessibility.html">Accessibility</a></li>
-            <li><a href="/rss.xml">RSS Feed</a></li>
-          </ul>
-        </div>
-        <div>
-          <h4>Connect</h4>
-          <ul>
-            <li><a href="https://www.facebook.com/Mpumalangalocaltime" target="_blank" rel="noopener">Facebook</a></li>
-            <li><a href="https://x.com/mplocaltime1" target="_blank" rel="noopener">X</a></li>
-            <li><a href="https://www.instagram.com/mpumalanga_local_time/" target="_blank" rel="noopener">Instagram</a></li>
-          </ul>
-        </div>
-      </div>
-      <div class="footer-legal">
-        <div>
-          <strong>© 2025 Mpumalanga Local Time</strong>
-          <div class="meta-small">Trusted news for Mpumalanga communities.</div>
-        </div>
-        <div class="social-links">
-          <a href="/privacy-policy.html">Privacy</a>
-          <a href="/terms-and-conditions.html">Terms</a>
-          <a href="/accessibility.html">Accessibility</a>
-        </div>
-      </div>
-    </div>
-  </footer>
-
   <script>
-    const user = localStorage.getItem('currentUser') || 'Guest';
-    const token = localStorage.getItem('token') || '';
-    const role = localStorage.getItem('currentRole') || 'user';
-    let currentUser = { username: user, role };
-    const welcome = document.getElementById('welcome');
-    const profileStats = document.getElementById('profileStats');
-    const storyArea = document.getElementById('storyArea');
-    const analyticsArea = document.getElementById('analyticsArea');
-    const searchInput = document.getElementById('searchInput');
-    const searchResults = document.getElementById('searchResults');
+    const token = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('currentUser');
+    let currentRole = 'user';
+    let currentUserId = null;
+    let storyPage = 1;
+    let storyPageTotal = 0;
+    const storyPagination = document.getElementById('storyPagination');
+    const storyPrevPageButton = document.getElementById('storyPrevPage');
+    const storyNextPageButton = document.getElementById('storyNextPage');
+    const storyPageSummary = document.getElementById('storyPageSummary');
+    const statusBanner = document.getElementById('statusBanner');
+    const summaryGrid = document.getElementById('summaryGrid');
+    const storyList = document.getElementById('storyList');
+    const reviewQueue = document.getElementById('reviewQueue');
     const storyForm = document.getElementById('storyForm');
-    const createStoryMessage = document.getElementById('createStoryMessage');
-    const notificationForm = document.getElementById('notificationForm');
-    const notificationMessage = document.getElementById('notificationMessage');
-    const notificationList = document.getElementById('notificationList');
-    const contributorPerformance = document.getElementById('contributorPerformance');
+    const saveAndSubmitButton = document.getElementById('saveAndSubmitButton');
     const logoutButton = document.getElementById('logoutButton');
-    const editorAnalytics = document.getElementById('editorAnalytics');
-    const editorialOverview = document.getElementById('editorialOverview');
-    const editorialQueue = document.getElementById('editorialQueue');
-    const editorialQueueStatus = document.getElementById('editorialQueueStatus');
-    const editorialRoles = ['admin', 'editor', 'sub-editor', 'managing-editor', 'journalist'];
+    const newsroomNav = document.getElementById('newsroomNav');
+    const welcome = document.getElementById('welcome');
+    const statusFilter = document.getElementById('statusFilter');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const storySearch = document.getElementById('storySearch');
 
-    function showNotLoggedIn() {
-      welcome.textContent = 'Not logged in';
-      profileStats.innerHTML = '';
-      storyArea.innerHTML = '<p>Please log in through <a href="/login.html">login</a> to view and manage your stories.</p>';
-      searchResults.innerHTML = '<p>Sign in to search the newsroom.</p>';
-      storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = true;
-      });
-      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = true;
-      });
+    function escapeHtml(value = '') {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function statusGroup(status = 'draft') {
+      const normalized = String(status || 'draft').trim().toLowerCase().replace(/\s+/g, '_');
+      const canonical = {
+        draft: 'draft',
+        submitted: 'submitted',
+        'pending-review': 'submitted',
+        pending_review: 'submitted',
+        'in-review': 'in_review',
+        in_review: 'in_review',
+        'changes-requested': 'changes_requested',
+        changes_requested: 'changes_requested',
+        'needs-changes': 'changes_requested',
+        needs_changes: 'changes_requested',
+        approved: 'approved',
+        scheduled: 'scheduled',
+        published: 'published',
+        archived: 'archived',
+      }[normalized] || normalized;
+      return canonical === 'pending-review' ? 'submitted' : canonical;
+    }
+
+    function formatZuluDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Johannesburg' });
+    }
+
+    function setBanner(message, tone = 'info') {
+      statusBanner.style.display = 'block';
+      statusBanner.textContent = message;
+      statusBanner.style.background = tone === 'error' ? '#fff1f2' : tone === 'success' ? '#ecfdf5' : '#fff7ed';
+      statusBanner.style.borderColor = tone === 'error' ? '#fecdd3' : tone === 'success' ? '#a7f3d0' : '#fed7aa';
+      statusBanner.style.color = tone === 'error' ? '#9f1239' : tone === 'success' ? '#065f46' : '#9a4b00';
+    }
+
+    function displayAuthRequired() {
+      welcome.textContent = 'Please sign in to access the newsroom dashboard.';
+      summaryGrid.innerHTML = '<div class="panel"><p>Please log in through <a href="/login.html">login</a> to view newsroom data.</p></div>';
+      storyList.innerHTML = '<p>Please sign in to review your stories.</p>';
+      reviewQueue.innerHTML = '<p>Editorial queue is available to editors and admins after sign in.</p>';
+      storyForm.querySelectorAll('input, textarea, select, button').forEach((element) => { element.disabled = true; });
+      saveAndSubmitButton.disabled = true;
+      newsroomNav.innerHTML = '<a href="/login.html">Sign in</a>';
     }
 
     function handleLogout() {
@@ -280,431 +283,486 @@
       window.location.href = '/login.html';
     }
 
-    function escapeHtml(value = '') {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Request failed');
+      }
+      return payload;
     }
 
-    if (!token || !user || user === 'Guest') {
-      showNotLoggedIn();
-    } else {
-      async function loadSession() {
-        try {
-          const response = await fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
-          const payload = await response.json();
-          if (response.ok && payload.user) {
-            currentUser = payload.user;
-            welcome.innerHTML = `Logged in as <strong>${escapeHtml(currentUser.username)}</strong> (${escapeHtml(currentUser.role || 'user')})`;
-            localStorage.setItem('currentUser', currentUser.username);
-            localStorage.setItem('currentRole', currentUser.role || 'user');
-            return;
-          }
-        } catch (error) {
-          // fall back to the stored client values when the profile endpoint is unavailable
-        }
-        welcome.innerHTML = `Logged in as <strong>${escapeHtml(user)}</strong> (${escapeHtml(role)})`;
+    function buildNav(role) {
+      const statusMap = {
+        'Dashboard': '',
+        'Create Article': '',
+        'All Articles': '',
+        'My Drafts': 'draft',
+        'Submitted': 'submitted',
+        'Changes Requested': 'changes_requested',
+        'Approved': 'approved',
+        'Scheduled': 'scheduled',
+        'Published': 'published',
+        'Archived': 'archived',
+        'Review Queue': 'in_review',
+        'Breaking News': 'published',
+        'Featured Stories': 'published',
+      };
+      const baseNav = [
+        ['Dashboard', '#create-story-panel'],
+        ['Create Article', '#create-story-panel'],
+        ['All Articles', '#content-manager'],
+        ['My Drafts', '#content-manager'],
+        ['Submitted', '#content-manager'],
+        ['Changes Requested', '#content-manager'],
+        ['Approved', '#content-manager'],
+        ['Scheduled', '#content-manager'],
+        ['Published', '#content-manager'],
+        ['Archived', '#content-manager'],
+      ];
+      const editorNav = [
+        ['Review Queue', '#review-queue-panel'],
+        ['Breaking News', '#review-queue-panel'],
+        ['Featured Stories', '#review-queue-panel'],
+      ];
+      const items = role === 'admin' || role === 'editor' ? [...baseNav, ...editorNav] : baseNav;
+      newsroomNav.innerHTML = items.map(([label, href]) => `<a href="${href}" data-status-filter="${escapeHtml(statusMap[label] || '')}">${escapeHtml(label)}</a>`).join('');
+    }
+
+    function renderSummaryCards(payload) {
+      const overview = payload.overview || {};
+      const cards = [
+        { label: 'My Drafts', value: overview.drafts ?? 0, status: 'draft' },
+        { label: 'Submitted', value: overview.submitted ?? 0, status: 'submitted' },
+        { label: 'In Review', value: overview.inReview ?? 0, status: 'in_review' },
+        { label: 'Changes Requested', value: overview.changesRequested ?? 0, status: 'changes_requested' },
+        { label: 'Approved', value: overview.approved ?? 0, status: 'approved' },
+        { label: 'Scheduled', value: overview.scheduled ?? 0, status: 'scheduled' },
+        { label: 'Published', value: overview.published ?? 0, status: 'published' },
+        { label: 'Archived', value: overview.archived ?? 0, status: 'archived' },
+      ];
+      const newsroom = overview.newsroom || null;
+      if (newsroom) {
+        cards.push({ label: 'Newsroom Total', value: Object.values(newsroom).reduce((sum, value) => sum + Number(value || 0), 0), status: '' });
+      }
+      summaryGrid.innerHTML = cards.map((card) => `
+        <button class="stat-card" type="button" data-status-filter="${escapeHtml(card.status || '')}" aria-label="Filter by ${escapeHtml(card.label)}">
+          <strong>${Number(card.value || 0)}</strong>
+          <span>${escapeHtml(card.label)}</span>
+        </button>
+      `).join('');
+    }
+
+    function renderStoryRow(story) {
+      const canonicalStatus = statusGroup(story.status);
+      const isEditorial = ['admin', 'editor'].includes(currentRole);
+      const isOwner = Number(story.author_id) === Number(currentUserId);
+      const canEdit = (isOwner && ['draft', 'changes_requested'].includes(canonicalStatus)) || isEditorial;
+      const actionButtons = [];
+
+      if (canEdit && ['draft', 'changes_requested'].includes(canonicalStatus)) {
+        actionButtons.push(`<button class="btn small" type="button" data-action="edit" data-id="${story.id}">Edit</button>`);
       }
 
-      logoutButton?.addEventListener('click', handleLogout);
-      storyForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = false;
-      });
-      notificationForm?.querySelectorAll('input, textarea, button').forEach((element) => {
-        element.disabled = false;
-      });
-      loadSession();
+      if (canonicalStatus === 'draft' && canEdit) {
+        actionButtons.push(`<button class="btn small primary" type="button" data-action="submit" data-id="${story.id}">Submit for review</button>`);
+      }
 
-      async function loadProfile() {
-        if (!token) {
-          profileStats.innerHTML = '<p>Please log in to view profile stats.</p>';
-          return;
-        }
-        try {
-          const resp = await fetch('/api/users/me', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await resp.json();
-          if (!resp.ok) {
-            profileStats.innerHTML = `<p>${data.error || 'Unable to load profile.'}</p>`;
-            return;
-          }
-          const userData = data.user || {};
-          profileStats.innerHTML = `<strong>${escapeHtml(userData.username)}</strong> • ${escapeHtml(userData.role || 'user')} • ${escapeHtml(userData.storyCount || 0)} stories • ${escapeHtml(userData.totalViews || 0)} total views`;
-        } catch (err) {
-          profileStats.innerHTML = '<p>Unable to load profile right now.</p>';
+      if (canonicalStatus === 'changes_requested' && canEdit) {
+        actionButtons.push(`<button class="btn small primary" type="button" data-action="submit" data-id="${story.id}">Resubmit</button>`);
+      }
+
+      if (['submitted', 'in_review'].includes(canonicalStatus) && isEditorial) {
+        actionButtons.push(`<button class="btn small primary" type="button" data-action="begin-review" data-id="${story.id}">Begin review</button>`);
+        actionButtons.push(`<button class="btn small" type="button" data-action="request-changes" data-id="${story.id}">Request changes</button>`);
+      }
+
+      if (canonicalStatus === 'in_review' && isEditorial) {
+        actionButtons.push(`<button class="btn small primary" type="button" data-action="approve" data-id="${story.id}">Approve</button>`);
+        actionButtons.push(`<button class="btn small" type="button" data-action="request-changes" data-id="${story.id}">Request changes</button>`);
+      }
+
+      if (canonicalStatus === 'approved' && isEditorial) {
+        actionButtons.push(`<button class="btn small" type="button" data-action="schedule" data-id="${story.id}">Schedule</button>`);
+        actionButtons.push(`<button class="btn small secondary" type="button" data-action="publish" data-id="${story.id}">Publish now</button>`);
+      }
+
+      if (canonicalStatus === 'scheduled' && isEditorial) {
+        actionButtons.push(`<button class="btn small secondary" type="button" data-action="publish" data-id="${story.id}">Publish now</button>`);
+      }
+
+      if (canonicalStatus === 'published') {
+        const storySlug = story.slug || story.id;
+        actionButtons.push(`<a class="btn small" href="/story/${escapeHtml(storySlug)}" target="_blank" rel="noopener">View live article</a>`);
+        if (isEditorial) {
+          actionButtons.push(`<button class="btn small" type="button" data-action="archive" data-id="${story.id}">Archive</button>`);
+          actionButtons.push(`<button class="btn small" type="button" data-action="toggle-breaking" data-id="${story.id}" data-breaking="${story.is_breaking ? '0' : '1'}">${story.is_breaking ? 'Remove breaking' : 'Mark breaking'}</button>`);
+          actionButtons.push(`<button class="btn small" type="button" data-action="toggle-featured" data-id="${story.id}" data-featured="${story.featured ? '0' : '1'}">${story.featured ? 'Remove featured' : 'Mark featured'}</button>`);
         }
       }
 
-      async function loadAnalytics() {
-        try {
-          const response = await fetch('/api/analytics/overview', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || 'Unable to load analytics.');
-          }
-          const overview = data.overview || {};
-          const analytics = data.analytics || {};
-          const editorHtml = `
-            <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(180px, 1fr));">
-              <div class="card" style="padding:14px;"><strong>Today visitors</strong><div>${analytics.todayVisitors || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Page views</strong><div>${analytics.pageViews || overview.viewCount || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Articles published</strong><div>${analytics.articlesPublished || overview.publishedCount || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Newsletter subs</strong><div>${analytics.newsletterSubscribers || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Push subscribers</strong><div>${analytics.pushNotificationSubscribers || 0}</div></div>
-              <div class="card" style="padding:14px;"><strong>Most read</strong><div>${escapeHtml(analytics.mostReadArticle || overview.topStories?.[0]?.title || '—')}</div></div>
+      const scheduledAt = story.scheduled_at ? ` <span class="muted">Scheduled: ${escapeHtml(formatZuluDate(story.scheduled_at))}</span>` : '';
+      const statusValue = escapeHtml(story.status || 'draft');
+      return `
+        <article class="story-item">
+          <div class="story-item-head">
+            <div>
+              <strong>${escapeHtml(story.title || 'Untitled story')}</strong>
+              <div class="muted">${escapeHtml(story.category || 'News')} • ${escapeHtml(story.author || 'Unknown author')} • ${statusValue}</div>
+              ${scheduledAt}
             </div>
-            <div class="card" style="padding:14px;">
-              <strong>Performance highlights</strong>
-              <ul>
-                <li>Top reporter: ${escapeHtml(analytics.topReporter || '—')}</li>
-                <li>Top municipality: ${escapeHtml(analytics.topMunicipality || '—')}</li>
-                <li>Popular category: ${escapeHtml(analytics.popularCategories?.[0]?.category || '—')}</li>
-                <li>Bounce rate: ${escapeHtml(analytics.bounceRate || '—')}</li>
-              </ul>
-            </div>`;
-          const overviewHtml = `
-            <div class="card" style="padding:14px;">
-              <p><strong>${escapeHtml(overview.storyCount || 0)}</strong> total stories</p>
-              <p><strong>${escapeHtml(overview.publishedCount || analytics.articlesPublished || 0)}</strong> published</p>
-              <p><strong>${escapeHtml(overview.draftCount || 0)}</strong> drafts</p>
-              <p><strong>${escapeHtml(overview.commentCount || 0)}</strong> comments</p>
-              <p><strong>${escapeHtml(overview.viewCount || analytics.pageViews || 0)}</strong> total views</p>
-              <ul>${(overview.topStories || []).map((story) => `<li>${escapeHtml(story.title)} — ${escapeHtml(story.views || 0)} views</li>`).join('')}</ul>
-            </div>`;
+            <span class="pill">${statusValue}</span>
+          </div>
+          <p class="muted" style="margin:10px 0 0;">${escapeHtml((story.excerpt || story.content || '').slice(0, 170) || 'No excerpt provided yet.')}${((story.excerpt || story.content || '').length > 170) ? '…' : ''}</p>
+          <div class="story-actions">
+            ${actionButtons.join('')}
+          </div>
+        </article>
+      `;
+    }
 
-          if (editorAnalytics) {
-            editorAnalytics.innerHTML = editorHtml;
-          }
-          if (analyticsArea) {
-            analyticsArea.innerHTML = overviewHtml;
-          }
-        } catch (error) {
-          if (editorAnalytics) {
-            editorAnalytics.innerHTML = '<p>Analytics unavailable right now.</p>';
-          }
-          if (analyticsArea) {
-            analyticsArea.innerHTML = '<p>Analytics are unavailable right now.</p>';
-          }
-        }
+    function renderPagination(total, page, limit) {
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      storyPageSummary.textContent = `Page ${page} of ${totalPages}`;
+      storyPrevPageButton.disabled = page <= 1;
+      storyNextPageButton.disabled = page >= totalPages || total <= limit;
+      storyPagination.style.display = total > limit ? 'flex' : 'none';
+    }
+
+    async function loadDashboard() {
+      try {
+        const response = await fetchJson('/api/dashboard/overview');
+        const role = response.role || currentRole || 'user';
+        currentRole = role;
+        localStorage.setItem('currentRole', role);
+        renderSummaryCards(response);
+        buildNav(role);
+        welcome.textContent = `Logged in as ${escapeHtml(storedUser || 'User')} (${escapeHtml(role)})`;
+      } catch (error) {
+        summaryGrid.innerHTML = '<div class="panel"><p>Unable to load newsroom overview.</p></div>';
+        welcome.textContent = 'Unable to load current user';
       }
 
-      async function loadEditorialQueue() {
-        if (!editorialOverview || !editorialQueue) return;
-        if (!editorialRoles.includes((role || '').toLowerCase())) {
-          editorialOverview.innerHTML = '<p class="meta">Editorial review tools are available to editors and admins.</p>';
-          editorialQueue.innerHTML = '';
-          editorialQueueStatus.textContent = 'Access restricted';
-          return;
+      try {
+        const filters = new URLSearchParams();
+        const searchTerm = storySearch.value.trim();
+        const selectedStatus = statusFilter.value;
+        const selectedCategory = categoryFilter.value;
+        if (searchTerm) filters.set('q', searchTerm);
+        if (selectedStatus) filters.set('status', selectedStatus);
+        if (selectedCategory) filters.set('category', selectedCategory);
+        filters.set('limit', '10');
+        filters.set('page', String(storyPage));
+        const storyPayload = await fetchJson(`/api/stories?${filters.toString()}`);
+        const stories = Array.isArray(storyPayload.stories) ? storyPayload.stories : [];
+        storyPageTotal = Number(storyPayload.total || 0);
+        if (!stories.length) {
+          storyList.innerHTML = '<p>No stories match the current newsroom filters.</p>';
+        } else {
+          storyList.innerHTML = stories.map(renderStoryRow).join('');
         }
+        renderPagination(Number(storyPayload.total || 0), storyPage, 10);
+      } catch (error) {
+        storyList.innerHTML = `<p>${escapeHtml(error.message || 'Unable to load story content.')}</p>`;
+        storyPagination.style.display = 'none';
+      }
 
-        editorialQueueStatus.textContent = 'Loading review queue…';
-        editorialOverview.innerHTML = '<p>Loading editorial overview…</p>';
-        editorialQueue.innerHTML = '<p>Loading stories…</p>';
-
-        try {
-          const [overviewResponse, storiesResponse] = await Promise.all([
-            fetch('/api/editorial/overview', { headers: { Authorization: 'Bearer ' + token } }),
-            fetch('/api/stories', { headers: { Authorization: 'Bearer ' + token } }),
-          ]);
-          const overviewPayload = await overviewResponse.json();
-          const storiesPayload = await storiesResponse.json();
-          if (!overviewResponse.ok || !storiesResponse.ok) {
-            throw new Error(overviewPayload.error || storiesPayload.error || 'Unable to load editorial queue.');
-          }
-
-          const overview = overviewPayload.overview || {};
-          const stories = (storiesPayload.stories || []).filter((entry) => ['pending-review', 'fact-check', 'needs-changes', 'approved', 'published', 'rejected'].includes((entry.status || '').toLowerCase()));
-
-          editorialOverview.innerHTML = `
-            <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
-              <div class="card" style="padding:14px;"><strong>${overview.pendingReview || 0}</strong><div>Pending review</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.needsChanges || 0}</strong><div>Needs changes</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.approved || 0}</strong><div>Approved</div></div>
-              <div class="card" style="padding:14px;"><strong>${overview.published || 0}</strong><div>Published</div></div>
-            </div>
-            <div class="meta" style="margin-top:10px;">Average quality score: ${Number(overview.averageQualityScore || 0).toFixed(0)} • Average grammar: ${Number(overview.averageGrammarScore || 0).toFixed(0)} • Top contributor: ${escapeHtml(overview.topContributor || '—')}</div>
-          `;
-
-          if (!stories.length) {
-            editorialQueue.innerHTML = '<p>No stories require editorial review yet.</p>';
-            editorialQueueStatus.textContent = 'Queue is clear';
-            return;
-          }
-
-          const queueCards = await Promise.all(stories.slice(0, 8).map(async (story) => {
-            try {
-              const analysisResponse = await fetch(`/api/stories/${story.id}/editorial-analysis`, { headers: { Authorization: 'Bearer ' + token } });
-              const analysisPayload = await analysisResponse.json();
-              const review = analysisPayload.review || {};
-              return `
-                <div class="card" style="margin-bottom:12px;padding:14px;">
-                  <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
-                    <div>
-                      <strong>${escapeHtml(story.title || 'Untitled story')}</strong>
-                      <div class="meta">${escapeHtml(story.category || 'News')} • ${escapeHtml(story.author || 'Unknown')} • ${escapeHtml(story.status || 'draft')}</div>
-                    </div>
-                    <div class="meta">Quality ${Number(review.quality_score || 0)}%</div>
-                  </div>
-                  <p style="margin:8px 0 10px;">${escapeHtml(review.recommendations || 'No recommendations yet.')}</p>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                    <span class="meta">Grammar ${review.grammar_score || '—'}</span>
-                    <span class="meta">SEO ${review.seo_score || '—'}</span>
-                    <span class="meta">Human confidence ${review.human_writing_confidence || '—'}%</span>
-                  </div>
-                  <label>
-                    <span>Editor notes</span>
-                    <textarea data-notes-for="${story.id}" rows="2" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;margin-top:6px;"></textarea>
-                  </label>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-                    <button class="btn primary" type="button" data-review-action="approve" data-id="${story.id}">Approve</button>
-                    <button class="btn" type="button" data-review-action="request-changes" data-id="${story.id}">Request changes</button>
-                    <button class="btn secondary" type="button" data-review-action="reject" data-id="${story.id}">Reject</button>
-                  </div>
-                </div>
-              `;
-            } catch (error) {
-              return `
-                <div class="card" style="margin-bottom:12px;padding:14px;">
-                  <strong>${escapeHtml(story.title || 'Untitled story')}</strong>
-                  <p>${escapeHtml(error.message || 'Unable to load analysis.')}</p>
-                </div>
-              `;
+      try {
+        const reviewPayload = await fetchJson('/api/stories?status=submitted,in_review,changes_requested,approved&limit=8&page=1');
+        const reviewStories = Array.isArray(reviewPayload.stories) ? reviewPayload.stories : [];
+        if (!reviewStories.length) {
+          reviewQueue.innerHTML = '<p>No stories are awaiting editorial review.</p>';
+        } else {
+          reviewQueue.innerHTML = reviewStories.map((story) => {
+            const queueStatus = statusGroup(story.status);
+            const actions = [];
+            if (['submitted', 'in_review'].includes(queueStatus) && ['admin', 'editor'].includes(currentRole)) {
+              actions.push(`<button class="btn small primary" type="button" data-action="begin-review" data-id="${story.id}">Begin review</button>`);
+              actions.push(`<button class="btn small" type="button" data-action="request-changes" data-id="${story.id}">Request changes</button>`);
             }
-          }));
-
-          editorialQueue.innerHTML = queueCards.join('');
-          editorialQueue.querySelectorAll('[data-review-action]').forEach((button) => {
-            button.addEventListener('click', async () => {
-              const id = button.getAttribute('data-id');
-              const action = button.getAttribute('data-review-action');
-              const notesField = editorialQueue.querySelector(`textarea[data-notes-for="${id}"]`);
-              const notes = notesField ? notesField.value : '';
-              try {
-                const response = await fetch(`/api/stories/${id}/editorial-review`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                  body: JSON.stringify({ action, notes }),
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.error || 'Review update failed');
-                editorialQueueStatus.textContent = `Updated ${payload.story?.title || 'story'} to ${payload.review?.status || action}`;
-                await loadEditorialQueue();
-              } catch (error) {
-                editorialQueueStatus.textContent = error.message;
-              }
-            });
-          });
-          editorialQueueStatus.textContent = `Showing ${stories.length} story${stories.length === 1 ? '' : 'ies'}`;
-        } catch (error) {
-          editorialOverview.innerHTML = '<p>Editorial overview unavailable right now.</p>';
-          editorialQueue.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
-          editorialQueueStatus.textContent = 'Unable to load queue';
-        }
-      }
-
-      async function loadNotifications() {
-        if (!notificationList) return;
-        notificationList.innerHTML = '<p>Loading notifications…</p>';
-        try {
-          const response = await fetch('/api/admin/notifications', {
-            headers: { Authorization: 'Bearer ' + token },
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to load notifications');
-          const notifications = data.notifications || [];
-          if (!notifications.length) {
-            notificationList.innerHTML = '<p>No notifications queued yet.</p>';
-            return;
-          }
-          notificationList.innerHTML = notifications.map((item) => `
-            <div class="card" style="margin-bottom:12px;padding:14px;">
-              <strong>${escapeHtml(item.title || 'Untitled notification')}</strong>
-              <p style="margin:8px 0;">${escapeHtml(item.body || '—')}</p>
-              <div class="meta">${escapeHtml(item.category || 'General')} • ${escapeHtml(item.province || 'All')} • ${escapeHtml(new Date(item.sent_at || item.created_at || Date.now()).toLocaleString('en-ZA'))}</div>
-            </div>
-          `).join('');
-        } catch (error) {
-          notificationList.innerHTML = `<p>${escapeHtml(error.message || 'Unable to load notifications')}</p>`;
-        }
-      }
-
-      notificationForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (!token) {
-          notificationMessage.textContent = 'Please sign in first.';
-          return;
-        }
-        const formData = new FormData(notificationForm);
-        const payload = {
-          title: formData.get('title'),
-          body: formData.get('body'),
-          category: formData.get('category') || 'Community',
-          province: formData.get('province') || 'Mpumalanga',
-        };
-        try {
-          const response = await fetch('/api/admin/notifications', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to send notification');
-          notificationMessage.textContent = `Sent ${data.notification?.title || 'notification'} successfully.`;
-          notificationForm.reset();
-          loadNotifications();
-        } catch (error) {
-          notificationMessage.textContent = error.message;
-        }
-      });
-
-      async function loadContributorPerformance() {
-        if (!contributorPerformance) return;
-        contributorPerformance.innerHTML = '<p>Loading contributor metrics…</p>';
-        try {
-          const response = await fetch('/api/contributors/performance', { headers: { Authorization: 'Bearer ' + token } });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to load contributor metrics');
-          const summary = data.summary || {};
-          const contributors = data.contributors || [];
-          contributorPerformance.innerHTML = `
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
-              <div class="card" style="padding:14px;"><strong>${summary.totalContributors || 0}</strong><div>contributors</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.totalPublishedArticles || 0}</strong><div>articles published</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.totalViews || 0}</strong><div>total views</div></div>
-              <div class="card" style="padding:14px;"><strong>${summary.topContributor?.username || '—'}</strong><div>top contributor</div></div>
-            </div>
-            <div style="display:grid;gap:10px;margin-top:8px;">
-              ${contributors.map((person) => `
-                <div class="card" style="padding:14px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+            if (queueStatus === 'approved' && ['admin', 'editor'].includes(currentRole)) {
+              actions.push(`<button class="btn small secondary" type="button" data-action="publish" data-id="${story.id}">Publish</button>`);
+            }
+            return `
+              <article class="story-item">
+                <div class="story-item-head">
                   <div>
-                    <strong>${escapeHtml(person.username || 'Contributor')}</strong>
-                    <div class="meta">${escapeHtml(person.role || 'contributor')} • ${escapeHtml(person.articlesPublished || 0)} published • ${escapeHtml(person.totalViews || 0)} views</div>
+                    <strong>${escapeHtml(story.title || 'Untitled story')}</strong>
+                    <div class="muted">${escapeHtml(story.category || 'News')} • ${escapeHtml(story.author || 'Unknown author')} • ${escapeHtml(story.status || 'draft')}</div>
                   </div>
-                  <div class="meta">${escapeHtml(person.bio || 'Active newsroom contributor')}</div>
+                  <span class="pill">${escapeHtml(story.status || 'draft')}</span>
                 </div>
-              `).join('')}
-            </div>`;
-        } catch (error) {
-          contributorPerformance.innerHTML = `<p>${error.message}</p>`;
-        }
-      }
-
-      async function loadStories() {
-        if (!storyArea) return;
-        storyArea.innerHTML = '<p>Loading stories…</p>';
-        try {
-          const response = await fetch(`/api/stories?author=${encodeURIComponent(user)}`, {
-            headers: { Authorization: 'Bearer ' + token },
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            if (response.status === 401) {
-              handleLogout();
-              return;
-            }
-            storyArea.innerHTML = `<p>${data.error || 'Unable to load stories.'}</p>`;
-            return;
-          }
-          const stories = data.stories || [];
-          if (!stories.length) {
-            storyArea.innerHTML = '<p>No stories found yet.</p>';
-            return;
-          }
-          storyArea.innerHTML = stories.map((story) => `
-            <div class="card" style="margin-bottom:18px;">
-              <div class="card-content">
-                <h3>${escapeHtml(story.title || 'Untitled story')}</h3>
-                <p>${escapeHtml(story.category || 'News')} • ${escapeHtml(new Date(story.submittedAt).toLocaleDateString('en-ZA'))} • ${escapeHtml(story.views || 0)} views • ${escapeHtml(story.status || 'draft')}</p>
-                <p>${escapeHtml(String(story.content || '').slice(0, 180))}${String(story.content || '').length > 180 ? '...' : ''}</p>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
-                  <button class="btn primary" type="button" data-update="pending-review" data-id="${story.id}">Send to review</button>
-                  <button class="btn" type="button" data-update="published" data-id="${story.id}">Publish</button>
+                <div class="story-actions">
+                  ${actions.join('') || '<span class="muted">No editorial action available.</span>'}
                 </div>
-              </div>
-            </div>
-          `).join('');
-          storyArea.querySelectorAll('[data-update]').forEach((button) => {
-            button.addEventListener('click', async () => {
-              const id = button.getAttribute('data-id');
-              const status = button.getAttribute('data-update');
-              try {
-                const response = await fetch(`/api/stories/${id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                  body: JSON.stringify({ status, editorial_notes: `Updated from dashboard ${new Date().toISOString()}` }),
-                });
-                const payload = await response.json();
-                if (!response.ok) throw new Error(payload.error || 'Update failed');
-                createStoryMessage.textContent = `Updated ${payload.story?.title || 'story'} to ${status}`;
-                loadStories();
-              } catch (error) {
-                createStoryMessage.textContent = error.message;
-              }
-            });
+              </article>
+            `;
+          }).join('');
+        }
+      } catch (error) {
+        reviewQueue.innerHTML = `<p>${escapeHtml(error.message || 'Unable to load dashboard review queue.')}</p>`;
+      }
+    }
+
+    function populateStoryForm(story) {
+      storyForm.dataset.storyId = String(story.id);
+      storyForm.elements.title.value = story.title || '';
+      storyForm.elements.category.value = story.category || 'News';
+      storyForm.elements.slug.value = story.slug || '';
+      storyForm.elements.excerpt.value = story.excerpt || '';
+      storyForm.elements.content.value = story.content || '';
+      const submitButtonLabel = storyForm.querySelector('button[type="submit"]');
+      if (submitButtonLabel) {
+        submitButtonLabel.textContent = 'Update draft';
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    storySearch.addEventListener('input', () => {
+      storyPage = 1;
+      loadDashboard();
+    });
+    statusFilter.addEventListener('change', () => {
+      storyPage = 1;
+      loadDashboard();
+    });
+    categoryFilter.addEventListener('change', () => {
+      storyPage = 1;
+      loadDashboard();
+    });
+
+    storyPrevPageButton.addEventListener('click', () => {
+      if (storyPage > 1) {
+        storyPage -= 1;
+        loadDashboard();
+      }
+    });
+
+    storyNextPageButton.addEventListener('click', () => {
+      if (storyPageTotal > storyPage * 10) {
+        storyPage += 1;
+        loadDashboard();
+      }
+    });
+
+    storyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(storyForm);
+      const payload = {
+        title: formData.get('title'),
+        category: formData.get('category') || 'News',
+        slug: formData.get('slug'),
+        excerpt: formData.get('excerpt'),
+        content: formData.get('content'),
+        status: 'draft',
+      };
+      try {
+        if (storyForm.dataset.storyId) {
+          const response = await fetchJson(`/api/stories/${storyForm.dataset.storyId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, status: 'draft' }),
           });
-        } catch (error) {
-          storyArea.innerHTML = '<p>Failed to load stories. Please try again later.</p>';
-        }
-      }
-
-      async function searchStories(query) {
-        if (!query) {
-          searchResults.innerHTML = '<p>Start typing to search the newsroom.</p>';
-          return;
-        }
-        try {
-          const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-          const data = await resp.json();
-          const results = data.results || [];
-          if (!results.length) {
-            searchResults.innerHTML = '<p>No matching stories found.</p>';
-            return;
-          }
-          searchResults.innerHTML = results.map((story) => `<div class="card" style="margin-bottom:12px;"><div class="card-content"><strong>${escapeHtml(story.title || 'Untitled story')}</strong><p>${escapeHtml(story.category || 'News')} • ${escapeHtml(story.status || 'draft')}</p></div></div>`).join('');
-        } catch (error) {
-          searchResults.innerHTML = '<p>Search is unavailable right now.</p>';
-        }
-      }
-
-      storyForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        if (!token) {
-          createStoryMessage.textContent = 'Please sign in first.';
-          return;
-        }
-        const formData = new FormData(storyForm);
-        const payload = {
-          title: formData.get('title'),
-          category: formData.get('category') || 'News',
-          content: formData.get('content'),
-          status: formData.get('status') || 'draft',
-        };
-        try {
-          const response = await fetch('/api/stories', {
+          setBanner(`Draft updated: ${response.story?.title || 'story'}.`, 'success');
+        } else {
+          const response = await fetchJson('/api/stories', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || 'Unable to save story');
-          createStoryMessage.textContent = `Saved ${data.story?.title || 'story'} successfully.`;
-          storyForm.reset();
-          loadStories();
-        } catch (error) {
-          createStoryMessage.textContent = error.message;
+          setBanner(`Article saved as a draft: ${response.story?.title || 'story'}.`, 'success');
         }
-      });
+        storyForm.reset();
+        delete storyForm.dataset.storyId;
+        const submitButtonLabel = storyForm.querySelector('button[type="submit"]');
+        if (submitButtonLabel) {
+          submitButtonLabel.textContent = 'Save draft';
+        }
+        await loadDashboard();
+      } catch (error) {
+        setBanner(error.message || 'Unable to save story.', 'error');
+      }
+    });
 
-      searchInput?.addEventListener('input', (event) => searchStories(event.target.value));
+    saveAndSubmitButton.addEventListener('click', async () => {
+      const formData = new FormData(storyForm);
+      const payload = {
+        title: formData.get('title'),
+        category: formData.get('category') || 'News',
+        slug: formData.get('slug'),
+        excerpt: formData.get('excerpt'),
+        content: formData.get('content'),
+        status: 'draft',
+      };
+      try {
+        let storyId = storyForm.dataset.storyId;
+        let created;
+        if (storyId) {
+          created = await fetchJson(`/api/stories/${storyId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, status: 'draft' }),
+          });
+        } else {
+          created = await fetchJson('/api/stories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          storyId = created.story.id;
+        }
+        const result = await fetchJson(`/api/stories/${storyId}/submit`, { method: 'POST' });
+        setBanner(`Submitted for review: ${result.story?.title || 'story'}.`, 'success');
+        storyForm.reset();
+        delete storyForm.dataset.storyId;
+        const submitButtonLabel = storyForm.querySelector('button[type="submit"]');
+        if (submitButtonLabel) {
+          submitButtonLabel.textContent = 'Save draft';
+        }
+        await loadDashboard();
+      } catch (error) {
+        setBanner(error.message || 'Unable to submit story for review.', 'error');
+      }
+    });
 
-      loadProfile();
-      loadNotifications();
-      loadContributorPerformance();
-      loadStories();
-      loadAnalytics();
-      loadEditorialQueue();
+    document.addEventListener('click', async (event) => {
+      const statusCard = event.target.closest('[data-status-filter]');
+      if (statusCard && statusCard.dataset.statusFilter !== undefined) {
+        if (statusCard.dataset.statusFilter) {
+          statusFilter.value = statusCard.dataset.statusFilter;
+        } else {
+          statusFilter.value = '';
+        }
+        storyPage = 1;
+        loadDashboard();
+        document.getElementById('content-manager').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+
+      const button = event.target.closest('[data-action]');
+      if (!button) return;
+      const action = button.dataset.action;
+      const id = button.dataset.id;
+
+      try {
+        if (action === 'edit') {
+          const story = await fetchJson(`/api/stories?status=draft,changes_requested&limit=100&page=1`);
+          const row = Array.isArray(story.stories) ? story.stories.find((item) => String(item.id) === String(id)) : null;
+          if (!row) throw new Error('Story not found for editing.');
+          populateStoryForm(row);
+          setBanner(`Editing ${row.title || 'story'} in the newsroom form.`, 'info');
+          return;
+        }
+
+        if (action === 'begin-review') {
+          const message = window.prompt('Add a short review note before moving this story into editorial review.', 'Reviewing the article for publication readiness.');
+          const response = await fetchJson(`/api/editorial/stories/${id}/review`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'in_review', notes: message || 'Review started by editor.' }),
+          });
+          setBanner(`Review started for ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'request-changes') {
+          const notes = window.prompt('Share clear editorial feedback for the writer:', 'Please tighten the headline, confirm the key facts, and resubmit the story with the revisions noted.');
+          if (!notes) return;
+          const response = await fetchJson(`/api/editorial/stories/${id}/request-changes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes }),
+          });
+          setBanner(`Changes requested for ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'approve') {
+          const notes = window.prompt('Approval note (optional):', 'Approved after editorial review.');
+          const response = await fetchJson(`/api/editorial/stories/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: notes || 'Approved after editorial review.' }),
+          });
+          setBanner(`Article approved: ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'schedule') {
+          const scheduledAt = window.prompt('Schedule publication date and time (ISO, for example 2026-10-05T12:00:00Z):', new Date(Date.now() + 86400000).toISOString());
+          if (!scheduledAt) return;
+          const response = await fetchJson(`/api/editorial/stories/${id}/schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduled_at: scheduledAt }),
+          });
+          setBanner(`Article scheduled: ${response.story?.title || 'story'} for ${formatZuluDate(response.story?.scheduled_at || scheduledAt)}.`, 'success');
+        } else if (action === 'publish') {
+          const confirmed = window.confirm('Publish this story now?');
+          if (!confirmed) return;
+          const response = await fetchJson(`/api/editorial/stories/${id}/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'published' }),
+          });
+          setBanner(`Article published: ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'archive') {
+          const reason = window.prompt('Archive reason (optional):', 'Archived from newsroom dashboard.');
+          if (reason === null) return;
+          const response = await fetchJson(`/api/editorial/stories/${id}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason || 'Archived from newsroom dashboard.' }),
+          });
+          setBanner(`Article archived: ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'submit') {
+          const response = await fetchJson(`/api/stories/${id}/submit`, { method: 'POST' });
+          setBanner(`Submitted ${response.story?.title || 'story'} for review.`, 'success');
+        } else if (action === 'toggle-breaking') {
+          const enabled = button.dataset.breaking === '1';
+          const response = await fetchJson(`/api/editorial/stories/${id}/breaking`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_breaking: enabled }),
+          });
+          setBanner(`${enabled ? 'Breaking' : 'Breaking flag removed'} for ${response.story?.title || 'story'}.`, 'success');
+        } else if (action === 'toggle-featured') {
+          const enabled = button.dataset.featured === '1';
+          const response = await fetchJson(`/api/editorial/stories/${id}/feature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ featured: enabled }),
+          });
+          setBanner(`${enabled ? 'Featured' : 'Featured flag removed'} for ${response.story?.title || 'story'}.`, 'success');
+        }
+
+        await loadDashboard();
+      } catch (error) {
+        setBanner(error.message || 'Dashboard action failed.', 'error');
+      }
+    });
+
+    logoutButton.addEventListener('click', handleLogout);
+
+    if (!token) {
+      displayAuthRequired();
+    } else {
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error('Your session is no longer valid');
+          }
+          const userPayload = await response.json();
+          currentRole = userPayload.user?.role || currentRole;
+          currentUserId = userPayload.user?.id || null;
+          localStorage.setItem('currentRole', currentRole);
+          localStorage.setItem('currentUser', userPayload.user?.username || storedUser || 'User');
+          buildNav(currentRole);
+          welcome.textContent = `Logged in as ${escapeHtml(userPayload.user?.username || storedUser || 'User')} (${escapeHtml(currentRole)})`;
+          setBanner('Newsroom dashboard ready.', 'info');
+          await loadDashboard();
+        })
+        .catch((error) => {
+          setBanner(error.message || 'Your session could not be validated.', 'error');
+          displayAuthRequired();
+        });
     }
   </script>
 </body>
