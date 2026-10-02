@@ -832,6 +832,23 @@ async function initializeDatabase() {
         `, [story.title, story.category, story.content, user?.id || null, now, story.featured_image, story.excerpt, story.reading_time, story.is_breaking || 0, story.status || 'published', now]);
       }
     }
+
+    // Backfill published_at for legacy "published" rows (including the demo
+    // stories seeded above) so the public visibility rule (status +
+    // published_at + archived_at) does not silently hide legitimate content
+    // that predates MLT-004.
+    await db.run(
+      `UPDATE stories SET published_at = COALESCE(published_at, updatedAt, submittedAt, ?) WHERE status = 'published' AND (published_at IS NULL OR published_at = '')`,
+      [new Date().toISOString()]
+    );
+
+    // Backfill slugs for stories that predate slug support (e.g. seeded demo stories)
+    // so public slug-based article URLs work for every published story.
+    const storiesMissingSlug = await db.all(`SELECT id, title FROM stories WHERE slug IS NULL OR slug = ''`);
+    for (const storyMissingSlug of storiesMissingSlug) {
+      const generatedSlug = await makeUniqueStorySlug(db, null, storyMissingSlug.title, storyMissingSlug.id);
+      await db.run(`UPDATE stories SET slug = ? WHERE id = ?`, [generatedSlug, storyMissingSlug.id]);
+    }
   } finally {
     await db.close();
   }
@@ -2059,6 +2076,30 @@ function normalizeCanonicalStoryStatus(status = 'draft') {
   return CANONICAL_STORY_STATES.has(canonical) ? canonical : 'draft';
 }
 
+// MLT-004: single authoritative rule for whether a story may appear on any
+// public surface (homepage, category pages, search, breaking/featured/latest,
+// related stories, article page). A story is publicly visible only when it is
+// published, its published_at timestamp exists and is not in the future, and
+// it has not been archived. This must be enforced in SQL, never only client-side.
+function publicStoryWhereClause(alias = 's') {
+  return `${alias}.status = 'published' AND ${alias}.published_at IS NOT NULL AND ${alias}.published_at <= ? AND ${alias}.archived_at IS NULL`;
+}
+
+function nowISO() {
+  return new Date().toISOString();
+}
+
+// Fields that carry internal newsroom/editorial metadata and must never be
+// exposed through public-facing endpoints or rendered article pages.
+const INTERNAL_STORY_FIELDS = ['author_id', 'submitted_by', 'published_by', 'editorial_notes', 'scheduled_at', 'archived_at'];
+
+function sanitizePublicStory(row) {
+  if (!row || typeof row !== 'object') return row;
+  const safe = { ...row };
+  for (const field of INTERNAL_STORY_FIELDS) delete safe[field];
+  return safe;
+}
+
 function legacyStoryStatusLabel(status) {
   const normalized = normalizeCanonicalStoryStatus(status);
   if (normalized === 'submitted' || normalized === 'in_review') return 'pending-review';
@@ -2269,6 +2310,18 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
     const nextFeatured = canManageEditorialFields(req) && payload.featured ? 1 : Number(existing.featured || 0);
     const nextBreaking = canManageEditorialFields(req) && payload.is_breaking ? 1 : Number(existing.is_breaking || 0);
     const statusValue = hasStatusChange ? nextStatus : normalizeCanonicalStoryStatus(existing.status || 'draft');
+    // Preserve the existing (stable) slug unless an explicit new slug or first-time
+    // slug is required, so editing unrelated fields never changes the public URL.
+    let slugValue = existing.slug;
+    if (payload.slug) {
+      slugValue = await makeUniqueStorySlug(db, payload.slug, payload.title || existing.title, id);
+    } else if (!existing.slug) {
+      slugValue = await makeUniqueStorySlug(db, null, payload.title || existing.title, id);
+    }
+    // Keep published_at/archived_at consistent with the canonical status so the
+    // public visibility rule cannot be bypassed by a direct status change here.
+    const publishedAtValue = statusValue === 'published' ? (existing.published_at || updatedAt) : existing.published_at;
+    const archivedAtValue = statusValue === 'archived' ? (existing.archived_at || updatedAt) : existing.archived_at;
     const fields = [
       ['title', payload.title || existing.title],
       ['category', payload.category || existing.category || 'News'],
@@ -2281,11 +2334,13 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
       ['status', statusValue],
       ['editorial_notes', payload.editorial_notes || existing.editorial_notes || ''],
       ['updatedAt', updatedAt],
-      ['slug', payload.slug || (payload.title || existing.title || 'story').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')],
+      ['slug', slugValue],
       ['seo_title', payload.seo_title || existing.seo_title || ''],
       ['meta_description', payload.meta_description || existing.meta_description || ''],
       ['tags', payload.tags || existing.tags || ''],
       ['municipality', payload.municipality || existing.municipality || ''],
+      ['published_at', publishedAtValue],
+      ['archived_at', archivedAtValue],
     ];
     const assignments = fields.map(([column]) => `${column} = ?`).join(', ');
     const values = fields.map(([, value]) => value);
@@ -2831,25 +2886,29 @@ app.get('/api/contributors/performance', authMiddleware, requireRole('admin', 'e
   });
 });
 
+// Public search: only ever searches publicly visible (published, not archived,
+// not scheduled-for-the-future) stories. The caller can never widen the result
+// set via a status/query-parameter override.
 app.get('/api/search', async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  const category = String(req.query.category || '').trim();
-  const requestedStatus = String(req.query.status || '').trim();
-  const enforcedStatus = req.user ? (requestedStatus || 'published') : 'published';
+  const q = String(req.query.q || '').trim().slice(0, 120);
+  const category = String(req.query.category || '').trim().slice(0, 80);
+  const limit = Math.max(1, Math.min(20, Number.parseInt(req.query.limit, 10) || 10));
   if (!q) {
     return res.json({ results: [] });
   }
   return withDB(async (db) => {
-    const filters = ['(title LIKE ? OR content LIKE ? OR excerpt LIKE ? OR category LIKE ? OR tags LIKE ?)'];
-    const params = [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`];
+    const filters = [
+      publicStoryWhereClause('s'),
+      '(s.title LIKE ? OR s.content LIKE ? OR s.excerpt LIKE ? OR s.category LIKE ? OR s.tags LIKE ?)'
+    ];
+    const params = [nowISO(), `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`];
     if (category) {
-      filters.push('category = ?');
+      filters.push('s.category = ?');
       params.push(category);
     }
-    filters.push('status = ?');
-    params.push(enforcedStatus);
-    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${filters.join(' AND ')} ORDER BY s.submittedAt DESC LIMIT 10`, params);
-    const results = rows.map((story) => ({ ...story, comments: Number(story.comments || 0) }));
+    params.push(limit);
+    const rows = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${filters.join(' AND ')} ORDER BY s.published_at DESC LIMIT ?`, params);
+    const results = rows.map((story) => sanitizePublicStory({ ...story, comments: Number(story.comments || 0) }));
     res.json({ results });
   });
 });
@@ -2857,9 +2916,11 @@ app.get('/api/search', async (req, res) => {
 app.post('/api/stories/:id/view', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
+    const visible = await db.get(`SELECT id FROM stories s WHERE s.id = ? AND ${publicStoryWhereClause('s')}`, [id, nowISO()]);
+    if (!visible) return res.status(404).json({ error: 'story not found' });
     await db.run(`UPDATE stories SET views = COALESCE(views,0) + 1 WHERE id = ?`, [id]);
     const s = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
-    res.json({ story: s });
+    res.json({ story: sanitizePublicStory(s) });
   });
 });
 
@@ -2868,8 +2929,8 @@ app.post('/api/stories/:id/comments', authMiddleware, async (req, res) => {
   const { text, parentId, replyTo } = req.body || {};
   if (!text) return res.status(400).json({ error: 'comment text required' });
   return withDB(async (db) => {
-    const story = await db.get(`SELECT id, status FROM stories WHERE id = ?`, [id]);
-    if (!story || story.status !== 'published') return res.status(404).json({ error: 'story not found' });
+    const story = await db.get(`SELECT id FROM stories s WHERE s.id = ? AND ${publicStoryWhereClause('s')}`, [id, nowISO()]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
     const createdAt = new Date().toISOString();
     const safeParentId = Number(parentId || replyTo || 0);
     const safeText = String(text).trim().slice(0, 2000);
@@ -2882,8 +2943,8 @@ app.post('/api/stories/:id/comments', authMiddleware, async (req, res) => {
 app.get('/api/stories/:id/comments', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
-    const story = await db.get(`SELECT id, status FROM stories WHERE id = ?`, [id]);
-    if (!story || story.status !== 'published') return res.status(404).json({ error: 'story not found' });
+    const story = await db.get(`SELECT id FROM stories s WHERE s.id = ? AND ${publicStoryWhereClause('s')}`, [id, nowISO()]);
+    if (!story) return res.status(404).json({ error: 'story not found' });
     const comments = await db.all(`SELECT id, story_id, author_id, author_name, text, parent_id, likes, dislikes, reported, pinned, status, created_at FROM comments WHERE story_id = ? ORDER BY created_at DESC`, [id]);
     res.json({ comments });
   });
@@ -2900,17 +2961,52 @@ app.post('/api/admin/breaking-news', authMiddleware, requireRole('admin', 'edito
   });
 });
 
+// Consolidated public breaking-news endpoint (previously duplicated).
+// Order of precedence: curated breaking_news entries -> published stories
+// flagged is_breaking -> latest published stories as a safe fallback.
+// Every source is filtered through the same publication-visibility rule so a
+// story can never appear here merely because is_breaking/featured is set.
 app.get('/api/breaking-news', async (req, res) => {
   return withDB(async (db) => {
-    const items = await db.all(`SELECT * FROM breaking_news WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ?) ORDER BY priority DESC, published_at DESC LIMIT 8`, [new Date().toISOString()]);
-    if (items.length) {
-      const stories = items.map((item) => ({ id: item.id, title: item.headline, category: 'Breaking', submittedAt: item.published_at, priority: item.priority }));
+    const now = nowISO();
+    const curated = await db.all(
+      `SELECT bn.* FROM breaking_news bn
+       LEFT JOIN stories s ON s.id = bn.article_id
+       WHERE bn.status = 'active' AND (bn.expires_at IS NULL OR bn.expires_at > ?)
+         AND (bn.article_id IS NULL OR (${publicStoryWhereClause('s')}))
+       ORDER BY bn.priority DESC, bn.published_at DESC LIMIT 8`,
+      [now, now]
+    );
+    if (curated.length) {
+      const stories = curated.map((item) => ({ id: item.id, articleId: item.article_id || null, title: item.headline, slug: item.slug || null, category: 'Breaking', publishedAt: item.published_at, priority: item.priority }));
       return res.json({ stories });
     }
 
-    const fallbackStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.is_breaking = 1 OR s.featured = 0 ORDER BY s.submittedAt DESC LIMIT 8`);
-    const stories = fallbackStories.map((story) => ({ ...story, comments: Number(story.comments || 0) }));
-    res.json({ stories });
+    const breakingStories = await db.all(
+      `SELECT s.*, u.username as author, (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
+       FROM stories s LEFT JOIN users u ON u.id = s.author_id
+       WHERE ${publicStoryWhereClause('s')} AND s.is_breaking = 1
+       ORDER BY s.published_at DESC LIMIT 8`,
+      [now]
+    );
+    const dedupe = (rows) => rows
+      .filter((story) => story && story.title && (story.content || story.excerpt || story.featured_image))
+      .filter((story, index, array) => array.findIndex((candidate) => (candidate.title || '').toLowerCase() === (story.title || '').toLowerCase()) === index)
+      .map((story) => sanitizePublicStory({ ...story, comments: Number(story.comments || 0) }));
+
+    const dedupedBreakingStories = dedupe(breakingStories);
+    if (dedupedBreakingStories.length) {
+      return res.json({ stories: dedupedBreakingStories });
+    }
+
+    const latestStories = await db.all(
+      `SELECT s.*, u.username as author, (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
+       FROM stories s LEFT JOIN users u ON u.id = s.author_id
+       WHERE ${publicStoryWhereClause('s')}
+       ORDER BY s.published_at DESC LIMIT 8`,
+      [now]
+    );
+    res.json({ stories: dedupe(latestStories) });
   });
 });
 
@@ -3016,58 +3112,82 @@ app.get('/api/admin/notifications', authMiddleware, requireRole('admin', 'editor
 app.get('/api/stories/:id', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
-    const s = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ? AND s.status = 'published'`, [id]);
+    const s = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ? AND ${publicStoryWhereClause('s')}`, [id, nowISO()]);
     if (!s) return res.status(404).json({ error: 'story not found' });
     const comments = await db.all(`SELECT author_name as author, text, created_at as at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
-    res.json({ story: s, comments });
+    res.json({ story: sanitizePublicStory(s), comments });
   });
 });
 
-// Serve a rendered article page for story details
+// Serve a rendered article page for story details. Accepts either a numeric
+// story id or a stable slug so legacy links keep working while new links can
+// use the public, human-readable slug URL.
 app.get('/story/:id', async (req, res) => {
-  const id = req.params.id;
+  const idParam = req.params.id;
+  const isNumericId = /^\d+$/.test(idParam);
+  const lookupClause = isNumericId ? 's.id = ?' : 's.slug = ?';
   return withDB(async (db) => {
-    const s = await db.get(`SELECT s.*, u.username as author, u.bio as author_bio, u.avatar as author_avatar FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ? AND s.status = 'published'`, [id]);
+    const now = nowISO();
+    const s = await db.get(`SELECT s.*, u.username as author, u.bio as author_bio, u.avatar as author_avatar FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${lookupClause} AND ${publicStoryWhereClause('s')}`, [idParam, now]);
     if (!s) return res.status(404).send('Article not found');
+    const id = s.id;
     await db.run(`UPDATE stories SET views = COALESCE(views,0) + 1 WHERE id = ?`, [id]);
     const comments = await db.all(`SELECT author_name as author, text, created_at as at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
-    let related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
-    const trending = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' ORDER BY s.views DESC, s.submittedAt DESC LIMIT 3`, [id]);
+    let related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND s.category = ? ORDER BY s.published_at DESC LIMIT 3`, [id, now, s.category || '']);
+    const trending = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} ORDER BY s.views DESC, s.published_at DESC LIMIT 3`, [id, now]);
     if (!related.length) {
-      related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' ORDER BY s.submittedAt DESC LIMIT 3`, [id]);
+      related = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} ORDER BY s.published_at DESC LIMIT 3`, [id, now]);
     }
 
     let contributorStories = [];
     if (s.author_id) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.author_id = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author_id]);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND s.author_id = ? ORDER BY s.published_at DESC LIMIT 3`, [id, now, s.author_id]);
     }
     if (!contributorStories.length && s.author) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND lower(COALESCE(u.username, '')) = lower(?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.author]);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND lower(COALESCE(u.username, '')) = lower(?) ORDER BY s.published_at DESC LIMIT 3`, [id, now, s.author]);
     }
     if (!contributorStories.length) {
-      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+      contributorStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND s.category = ? ORDER BY s.published_at DESC LIMIT 3`, [id, now, s.category || '']);
     }
 
     const municipalityName = inferMunicipalityFromStory(s);
     let municipalityStories = [];
     if (municipalityName) {
       const municipalityTerm = municipalityName.toLowerCase();
-      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND (lower(COALESCE(s.municipality, '')) = ? OR lower(COALESCE(s.title, '')) LIKE ? OR lower(COALESCE(s.content, '')) LIKE ?) ORDER BY s.submittedAt DESC LIMIT 3`, [id, municipalityTerm, `%${municipalityTerm}%`, `%${municipalityTerm}%`]);
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND (lower(COALESCE(s.municipality, '')) = ? OR lower(COALESCE(s.title, '')) LIKE ? OR lower(COALESCE(s.content, '')) LIKE ?) ORDER BY s.published_at DESC LIMIT 3`, [id, now, municipalityTerm, `%${municipalityTerm}%`, `%${municipalityTerm}%`]);
     }
     if (!municipalityStories.length) {
-      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND s.status = 'published' AND s.category = ? ORDER BY s.submittedAt DESC LIMIT 3`, [id, s.category || '']);
+      municipalityStories = await db.all(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id != ? AND ${publicStoryWhereClause('s')} AND s.category = ? ORDER BY s.published_at DESC LIMIT 3`, [id, now, s.category || '']);
     }
 
-    const title = s.title || 'Article';
-    const excerpt = s.excerpt || (s.content ? s.content.slice(0, 160) : '');
+    const title = s.seo_title || s.title || 'Article';
+    const excerpt = s.meta_description || s.excerpt || (s.content ? sanitizeHtml(s.content, { allowedTags: [], allowedAttributes: {} }).slice(0, 160) : '');
     const image = s.featured_image || '/logo.png';
-    const publishedAt = s.submittedAt ? new Date(s.submittedAt).toISOString() : '';
-    const date = s.submittedAt ? new Date(s.submittedAt).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short' }) : '';
-    const updatingAt = publishedAt;
-    const shareUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+    const imageAlt = s.image_alt || s.title || 'Mpumalanga Local Time';
+    const publishedAt = s.published_at ? new Date(s.published_at).toISOString() : '';
+    const JOHANNESBURG_TZ = 'Africa/Johannesburg';
+    const date = s.published_at ? new Date(s.published_at).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short', timeZone: JOHANNESBURG_TZ }) : '';
+    const updatingAt = s.updatedAt ? new Date(s.updatedAt).toISOString() : publishedAt;
+    // A story counts as "updated" for readers only when it was meaningfully
+    // edited after first publication (e.g. a correction), not on every internal touch.
+    const wasUpdatedAfterPublish = s.updatedAt && publishedAt && new Date(s.updatedAt).getTime() > new Date(publishedAt).getTime() + 60000;
+    const updatedDisplay = wasUpdatedAfterPublish ? new Date(s.updatedAt).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short', timeZone: JOHANNESBURG_TZ }) : '';
+    const canonicalUrl = req.protocol + '://' + req.get('host') + '/story/' + (s.slug || s.id);
+    const shareUrl = canonicalUrl;
     const authorAvatar = s.author_avatar || '/logo.png';
     const authorDescription = s.author_bio || `Local ${escapeHtml(s.category || 'news').toLowerCase()} reporter bringing stories from around Mpumalanga to readers every day.`;
     const contentHtml = formatArticleContent(s.content || '');
+    const tagList = String(s.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
+    const tagsHtml = tagList.length
+      ? `<ul class="article-tags" aria-label="Tags">${tagList.map((tag) => `<li>${escapeHtml(tag)}</li>`).join('')}</ul>`
+      : '';
+    const subheadlineHtml = s.subheadline ? `<p class="article-subheadline">${escapeHtml(s.subheadline)}</p>` : '';
+    const imageCaptionHtml = s.image_caption
+      ? `<figcaption class="article-image-caption">${escapeHtml(s.image_caption)}${s.image_credit ? ` <span class="article-image-credit">${escapeHtml(s.image_credit)}</span>` : ''}</figcaption>`
+      : '';
+    const updatedNoticeHtml = updatedDisplay
+      ? `<p class="article-update-notice">Updated: <time datetime="${escapeAttr(updatingAt)}">${escapeHtml(updatedDisplay)}</time></p>`
+      : '';
     const commentsCount = comments.length;
     const commentsHtml = commentsCount
       ? comments.map((comment) => `
@@ -3082,12 +3202,12 @@ app.get('/story/:id', async (req, res) => {
     const relatedHtml = related.map((item) => `
       <div class="single-related-posts">
         <div class="related-posts-thumbnail">
-          <a href="/story/${item.id}">
+          <a href="/story/${item.slug || item.id}">
             <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" />
           </a>
         </div>
         <div class="cm-post-content">
-          <h3 class="cm-entry-title"><a href="/story/${item.id}">${escapeHtml(item.title)}</a></h3>
+          <h3 class="cm-entry-title"><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></h3>
           <div class="cm-below-entry-meta cm-separator-default">
             <span class="cm-post-date"><time datetime="${escapeAttr(item.submittedAt || '')}">${escapeHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('en-ZA', { month:'long', day:'numeric', year:'numeric' }) : '')}</time></span>
             <span class="cm-author cm-vcard"><a href="/">${escapeHtml(item.author || 'Mpumalanga Local Time')}</a></span>
@@ -3099,10 +3219,10 @@ app.get('/story/:id', async (req, res) => {
       ? contributorStories.map((item) => `
         <div class="single-related-posts">
           <div class="related-posts-thumbnail">
-            <a href="/story/${item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
           </div>
           <div class="cm-post-content">
-            <h3 class="cm-entry-title"><a href="/story/${item.id}">${escapeHtml(item.title)}</a></h3>
+            <h3 class="cm-entry-title"><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></h3>
             <div class="cm-below-entry-meta cm-separator-default">
               <span class="cm-author cm-vcard"><a href="/">${escapeHtml(item.author || 'Mpumalanga Local Time')}</a></span>
             </div>
@@ -3114,10 +3234,10 @@ app.get('/story/:id', async (req, res) => {
       ? municipalityStories.map((item) => `
         <div class="single-related-posts">
           <div class="related-posts-thumbnail">
-            <a href="/story/${item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
           </div>
           <div class="cm-post-content">
-            <h3 class="cm-entry-title"><a href="/story/${item.id}">${escapeHtml(item.title)}</a></h3>
+            <h3 class="cm-entry-title"><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></h3>
             <div class="cm-below-entry-meta cm-separator-default">
               <span class="cm-post-date"><time datetime="${escapeAttr(item.submittedAt || '')}">${escapeHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('en-ZA', { month:'short', day:'numeric' }) : '')}</time></span>
             </div>
@@ -3141,9 +3261,10 @@ app.get('/story/:id', async (req, res) => {
   <meta property="og:title" content="${escapeHtml(title)} - Mpumalanga Local Time" />
   <meta property="og:description" content="${escapeHtml(excerpt)}" />
   <meta property="og:image" content="${escapeHtml(image)}" />
-  <meta property="og:url" content="${escapeHtml(req.protocol + '://' + req.get('host') + req.originalUrl)}" />
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
   <meta property="article:published_time" content="${publishedAt}" />
   <meta property="article:modified_time" content="${updatingAt}" />
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${escapeHtml(title)}" />
   <meta name="twitter:description" content="${escapeHtml(excerpt)}" />
@@ -3240,7 +3361,7 @@ app.get('/story/:id', async (req, res) => {
     "publisher":{"@type":"Organization","name":"Mpumalanga Local Time","logo":{"@type":"ImageObject","url":"https://mplocaltime.co.za/logo.png"}},
     "datePublished":"${publishedAt}",
     "dateModified":"${updatingAt}",
-    "mainEntityOfPage":{"@type":"WebPage","@id":"${escapeHtml(req.protocol + '://' + req.get('host') + req.originalUrl)}"}
+    "mainEntityOfPage":{"@type":"WebPage","@id":"${escapeHtml(canonicalUrl)}"}
   }</script>
 </head>
 <body class="wp-singular post-template-default single single-post postid-${s.id} single-format-standard">
@@ -3252,7 +3373,7 @@ app.get('/story/:id', async (req, res) => {
           <div class="cm-container">
             <div class="cm-top-row">
               <div class="cm-header-left-col"><div class="date-in-header">${escapeHtml(new Date().toLocaleDateString('en-ZA', { weekday: 'long', year:'numeric', month:'long', day:'numeric' }))}</div></div>
-              <div class="cm-header-right-col"><div class="breaking-news"><strong>Latest:</strong><ul class="newsticker">${(related.length ? related.slice(0,3) : []).map((item) => `<li><a href="/story/${item.id}">${escapeHtml(item.title)}</a></li>`).join('')}</ul></div></div>
+              <div class="cm-header-right-col"><div class="breaking-news"><strong>Latest:</strong><ul class="newsticker">${(related.length ? related.slice(0,3) : []).map((item) => `<li><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></li>`).join('')}</ul></div></div>
             </div>
           </div>
         </div>
@@ -3279,13 +3400,21 @@ app.get('/story/:id', async (req, res) => {
             <div class="cm-posts clearfix">
               <article id="post-${s.id}" class="post-${s.id} post type-post status-publish format-standard has-post-thumbnail hentry category-${escapeHtml((s.category||'news').toLowerCase())}">
                 <div class="cm-post-content">
-                  <div class="cm-featured-image"><img src="${escapeHtml(image)}" alt="${escapeHtml(title)}" style="width:100%;height:auto;border-radius:12px;" /></div>
-                  <header class="cm-entry-header"><h1 class="cm-entry-title">${escapeHtml(title)}</h1></header>
+                  <figure class="cm-featured-image">
+                    <img src="${escapeHtml(image)}" alt="${escapeHtml(imageAlt)}" style="width:100%;height:auto;border-radius:12px;" />
+                    ${imageCaptionHtml}
+                  </figure>
+                  <header class="cm-entry-header">
+                    <p class="category-pill">${escapeHtml(s.category || 'News')}</p>
+                    <h1 class="cm-entry-title">${escapeHtml(title)}</h1>
+                    ${subheadlineHtml}
+                  </header>
                   <div class="cm-below-entry-meta cm-separator-default">
                     <span class="cm-post-date"><time class="entry-date published updated" datetime="${publishedAt}">${escapeHtml(date)}</time></span>
                     <span class="cm-author cm-vcard"><a class="url fn n" href="/">${escapeHtml(s.author || 'admin')}</a></span>
                     <span class="cm-post-views">${s.views || 0} Views</span>
                   </div>
+                  ${updatedNoticeHtml}
                   <div class="article-author-box">
                     <div class="author-avatar"><img src="${escapeHtml(authorAvatar)}" alt="${escapeHtml(s.author || 'Author')}" /></div>
                     <div class="author-meta">
@@ -3299,6 +3428,7 @@ app.get('/story/:id', async (req, res) => {
                     <button type="button" class="share-button" data-article-share="facebook" data-url="${escapeHtml(shareUrl)}">Facebook</button>
                   </div>
                   <div class="cm-entry-summary article-content">${contentHtml}</div>
+                  ${tagsHtml}
                 </div>
               </article>
               <div class="article-comments" aria-label="Article discussion">
@@ -3324,7 +3454,7 @@ app.get('/story/:id', async (req, res) => {
                     <div class="widget-item">
                       <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" />
                       <div class="widget-item-content">
-                        <a href="/story/${item.id}">${escapeHtml(item.title)}</a>
+                        <a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a>
                         <time datetime="${escapeAttr(item.submittedAt || '')}">${escapeHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('en-ZA', { month:'short', day:'numeric' }) : '')}</time>
                       </div>
                     </div>
@@ -3444,101 +3574,90 @@ function escapeAttr(str) {
 // Get featured story for homepage
 app.get('/api/featured-story', async (req, res) => {
   return withDB(async (db) => {
+    const now = nowISO();
     const featured = await db.get(`
       SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
       FROM stories s
       LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.featured = 1 AND s.status = 'published'
-      ORDER BY s.submittedAt DESC
+      WHERE s.featured = 1 AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC
       LIMIT 1
-    `);
+    `, [now]);
 
     if (featured) {
       featured.comments = Number(featured.comments || 0);
-      return res.json({ story: featured });
+      return res.json({ story: sanitizePublicStory(featured) });
     }
 
+    // Safe fallback: no featured story yet, so surface the latest eligible
+    // published story instead of leaving the homepage hero empty.
     const latest = await db.get(`
       SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
       FROM stories s
       LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.status = 'published'
-      ORDER BY s.submittedAt DESC
+      WHERE ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC
       LIMIT 1
-    `);
+    `, [now]);
 
     if (latest) {
       latest.comments = Number(latest.comments || 0);
     }
-    res.json({ story: latest || null });
-  });
-});
-
-app.get('/api/breaking-news', async (req, res) => {
-  return withDB(async (db) => {
-    const breakingStories = await db.all(`
-      SELECT s.*, u.username as author,
-             (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
-      FROM stories s
-      LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.status = 'published' AND s.featured = 0 AND s.is_breaking = 1
-      ORDER BY s.submittedAt DESC LIMIT 6
-    `);
-
-    const dedupedBreakingStories = (breakingStories || [])
-      .filter((story) => story && story.title && (story.content || story.excerpt || story.featured_image))
-      .filter((story, index, array) => array.findIndex((candidate) => (candidate.title || '').toLowerCase() === (story.title || '').toLowerCase()) === index)
-      .map((story) => ({ ...story, comments: Number(story.comments || 0) }));
-
-    if (dedupedBreakingStories.length) {
-      return res.json({ stories: dedupedBreakingStories });
-    }
-
-    const latestStories = await db.all(`
-      SELECT s.*, u.username as author,
-             (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
-      FROM stories s
-      LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.status = 'published' AND s.featured = 0
-      ORDER BY s.submittedAt DESC LIMIT 6
-    `);
-
-    const dedupedLatestStories = (latestStories || [])
-      .filter((story) => story && story.title && (story.content || story.excerpt || story.featured_image))
-      .filter((story, index, array) => array.findIndex((candidate) => (candidate.title || '').toLowerCase() === (story.title || '').toLowerCase()) === index)
-      .map((story) => ({ ...story, comments: Number(story.comments || 0) }));
-
-    return res.json({ stories: dedupedLatestStories });
+    res.json({ story: latest ? sanitizePublicStory(latest) : null });
   });
 });
 
 app.get('/api/latest-stories', async (req, res) => {
   const excludeId = req.query.exclude || null;
+  const limit = Math.max(1, Math.min(20, Number.parseInt(req.query.limit, 10) || 4));
   return withDB(async (db) => {
     let query = `
       SELECT s.*, u.username as author,
              (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
       FROM stories s
       LEFT JOIN users u ON u.id = s.author_id
-      WHERE s.status = 'published' AND s.featured = 0
+      WHERE ${publicStoryWhereClause('s')} AND s.featured = 0
     `;
 
-    const params = [];
+    const params = [nowISO()];
     if (excludeId) {
       query += ` AND s.id != ?`;
       params.push(excludeId);
     }
 
-    query += ` ORDER BY s.submittedAt DESC LIMIT 4`;
+    query += ` ORDER BY s.published_at DESC, s.id DESC LIMIT ?`;
+    params.push(limit);
 
     const stories = await db.all(query, params);
-    const result = stories.map((story) => ({
+    const result = stories.map((story) => sanitizePublicStory({
       ...story,
       comments: Number(story.comments || 0)
     }));
     res.json({ stories: result });
+  });
+});
+
+// Public category listing: safe server-side filtering reused by the existing
+// static category pages (business/community/sports/arts/news) via main.js.
+app.get('/api/category/:category', async (req, res) => {
+  const category = String(req.params.category || '').trim().slice(0, 80);
+  const limit = Math.max(1, Math.min(30, Number.parseInt(req.query.limit, 10) || 12));
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const offset = (page - 1) * limit;
+  if (!category) return res.json({ stories: [], page, limit });
+  return withDB(async (db) => {
+    const now = nowISO();
+    const stories = await db.all(
+      `SELECT s.*, u.username as author, (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
+       FROM stories s LEFT JOIN users u ON u.id = s.author_id
+       WHERE ${publicStoryWhereClause('s')} AND lower(s.category) = lower(?)
+       ORDER BY s.published_at DESC, s.id DESC LIMIT ? OFFSET ?`,
+      [now, category, limit, offset]
+    );
+    const result = stories.map((story) => sanitizePublicStory({ ...story, comments: Number(story.comments || 0) }));
+    res.json({ stories: result, page, limit });
   });
 });
 

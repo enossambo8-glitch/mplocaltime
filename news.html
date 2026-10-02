@@ -59,7 +59,7 @@
       </div>
     </section>
 
-    <div class="grid article-grid">
+    <div class="grid article-grid" id="latestNewsGrid" data-latest-news>
       <article class="card" data-search="government service delivery potholes road repairs">
         <img src="/logo.png" alt="Local road repair project in Mpumalanga">
         <div class="card-content">
@@ -88,6 +88,21 @@
         </div>
       </article>
     </div>
+
+    <hr class="section-divider">
+
+    <section class="section-headline">
+      <div>
+        <h2 class="section-title">Search the news</h2>
+        <p class="section-subtitle">Find published stories by headline, topic or category.</p>
+      </div>
+    </section>
+
+    <form id="siteSearchForm" class="search-form" role="search">
+      <label for="siteSearch" class="visually-hidden">Search news</label>
+      <input type="search" id="siteSearch" name="q" placeholder="Search news…" autocomplete="off" style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;" />
+    </form>
+    <div class="grid article-grid" id="searchResultsGrid" aria-live="polite"></div>
 
     <hr class="section-divider">
 

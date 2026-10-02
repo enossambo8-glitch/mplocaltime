@@ -12,6 +12,10 @@ const app = (() => {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+  // Canonical public article link for any story object returned by the API:
+  // prefer the stable slug, fall back to the numeric id.
+  const storyHref = (story) => `/story/${encodeURIComponent(story?.slug || story?.id || '')}`;
+
   const initMenu = () => {
     const button = utils.qs('.nav-toggle');
     const nav = utils.qs('.nav-primary');
@@ -47,17 +51,116 @@ const app = (() => {
     });
   };
 
+  // Renders a single public story as a newspaper-style article card, reusing
+  // the existing .card/.card-content/.category-pill/.meta-row classes.
+  const buildStoryCardMarkup = (story) => {
+    const image = story.featured_image || '/logo.png';
+    const imageAlt = story.image_alt || story.title || 'Mpumalanga Local Time';
+    const category = story.category || 'News';
+    const excerpt = story.excerpt || (story.content ? String(story.content).slice(0, 140) : '');
+    const readingTime = story.reading_time ? `${story.reading_time} min read` : '';
+    const author = story.author ? `By ${escapeHTML(story.author)}` : '';
+    return `
+      <article class="card">
+        <a href="${storyHref(story)}">
+          <img src="${escapeHTML(image)}" alt="${escapeHTML(imageAlt)}" loading="lazy" onerror="this.src='/logo.png'" />
+        </a>
+        <div class="card-content">
+          <div class="category-pill">${escapeHTML(category)}</div>
+          <h3 class="card-title"><a href="${storyHref(story)}">${escapeHTML(story.title || 'Untitled story')}</a></h3>
+          <p class="card-excerpt">${escapeHTML(excerpt)}</p>
+          <div class="meta-row">${escapeHTML([category, readingTime, author].filter(Boolean).join(' • '))}</div>
+        </div>
+      </article>`;
+  };
+
+  const emptyStateMarkup = (message) => `<p class="section-subtitle">${escapeHTML(message)}</p>`;
+
+  // Server-enforced public search box (news.html): queries /api/search, which
+  // only ever returns publicly visible stories, and renders results into
+  // #searchResultsGrid. Falls back to the simple on-page [data-search] text
+  // filter when no results container is present on the page.
   const initSearch = () => {
     const input = utils.qs('#siteSearch');
-    const cards = utils.qsa('[data-search]');
-    if (!input || !cards.length) return;
-    utils.on(input, 'input', () => {
-      const query = input.value.trim().toLowerCase();
-      cards.forEach(card => {
-        const text = card.dataset.search.toLowerCase();
-        card.style.display = text.includes(query) ? 'grid' : 'none';
+    if (!input) return;
+    const resultsContainer = utils.qs('#searchResultsGrid');
+    const form = utils.qs('#siteSearchForm');
+    utils.on(form, 'submit', (event) => event.preventDefault());
+
+    if (!resultsContainer) {
+      const cards = utils.qsa('[data-search]');
+      if (!cards.length) return;
+      utils.on(input, 'input', () => {
+        const query = input.value.trim().toLowerCase();
+        cards.forEach(card => {
+          const text = card.dataset.search.toLowerCase();
+          card.style.display = text.includes(query) ? 'grid' : 'none';
+        });
       });
+      return;
+    }
+
+    let debounceTimer = null;
+    const runSearch = async () => {
+      const query = input.value.trim();
+      if (!query) {
+        resultsContainer.innerHTML = '';
+        return;
+      }
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('search failed');
+        const payload = await response.json();
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        resultsContainer.innerHTML = results.length
+          ? results.map(buildStoryCardMarkup).join('')
+          : emptyStateMarkup(`No published stories matched "${query}".`);
+      } catch (error) {
+        resultsContainer.innerHTML = emptyStateMarkup('Search is temporarily unavailable. Please try again shortly.');
+      }
+    };
+    utils.on(input, 'input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runSearch, 250);
     });
+  };
+
+  // Populates a static category page's article grid (business.html,
+  // arts.html, sports.html, community.html) with real published stories for
+  // that category, reusing the existing card markup and empty-state pattern.
+  const initCategoryPage = async () => {
+    const container = utils.qs('#categoryArticleGrid');
+    const category = container?.dataset.category;
+    if (!container || !category) return;
+    try {
+      const response = await fetch(`/api/category/${encodeURIComponent(category)}?limit=12`);
+      if (!response.ok) throw new Error('category fetch failed');
+      const payload = await response.json();
+      const stories = Array.isArray(payload.stories) ? payload.stories : [];
+      container.innerHTML = stories.length
+        ? stories.map(buildStoryCardMarkup).join('')
+        : emptyStateMarkup(`No ${category} stories have been published yet. Check back soon.`);
+    } catch (error) {
+      // Leave the existing static sample cards in place if the request fails,
+      // so the page is never left blank.
+    }
+  };
+
+  // Populates news.html's general Latest News feed with real published stories.
+  const initLatestNewsPage = async () => {
+    const container = utils.qs('[data-latest-news]');
+    if (!container) return;
+    try {
+      const response = await fetch('/api/latest-stories?limit=9');
+      if (!response.ok) throw new Error('latest stories fetch failed');
+      const payload = await response.json();
+      const stories = Array.isArray(payload.stories) ? payload.stories : [];
+      container.innerHTML = stories.length
+        ? stories.map(buildStoryCardMarkup).join('')
+        : emptyStateMarkup('No published stories are available yet. Check back soon.');
+    } catch (error) {
+      // Leave the existing static sample cards in place if the request fails.
+    }
   };
 
   const initScroll = () => {
@@ -145,7 +248,7 @@ const app = (() => {
       description: 'Latest business, investment, entrepreneurship and economic news from across Mpumalanga.',
       icon: '💼',
       accentClass: 'business',
-      href: '/news.html?category=business',
+      href: '/business.html',
     },
     {
       id: 'arts',
@@ -153,7 +256,7 @@ const app = (() => {
       description: 'Culture, entertainment, music, fashion, theatre and creative stories from local communities.',
       icon: '🎨',
       accentClass: 'arts',
-      href: '/news.html?category=arts',
+      href: '/arts.html',
     },
     {
       id: 'sports',
@@ -161,7 +264,7 @@ const app = (() => {
       description: 'Latest sporting news, tournaments, schools, clubs and community competitions.',
       icon: '🏅',
       accentClass: 'sports',
-      href: '/news.html?category=sports',
+      href: '/sports.html',
     },
     {
       id: 'community',
@@ -169,7 +272,7 @@ const app = (() => {
       description: 'Community development, public services, local events and inspiring stories from every municipality.',
       icon: '🤝',
       accentClass: 'community',
-      href: '/news.html?category=community',
+      href: '/community.html',
     },
   ];
 
@@ -280,13 +383,13 @@ const app = (() => {
       const featured = stories[0] || fallbackBreakingStories[0];
       const rest = stories.slice(1);
       const featuredMarkup = `
-        <a class="breaking-news-feature" href="/news.html?story=${featured.id || featured.title}" aria-label="${escapeHTML(featured.title)} ${escapeHTML(featured.category)} ${escapeHTML(formatRelativeTime(featured.submittedAt))}">
+        <a class="breaking-news-feature" href="${storyHref(featured)}" aria-label="${escapeHTML(featured.title)} ${escapeHTML(featured.category)} ${escapeHTML(formatRelativeTime(featured.submittedAt))}">
           <span class="breaking-news-feature-label">LIVE</span>
           <span class="breaking-news-feature-title">${escapeHTML(featured.title)}</span>
           <span class="breaking-news-feature-meta">${escapeHTML(featured.category)} • ${escapeHTML(formatRelativeTime(featured.submittedAt))}</span>
         </a>`;
       const secondaryMarkup = rest.length ? rest.map((story) => `
-        <a class="breaking-news-link" href="/news.html?story=${story.id || story.title}" aria-label="${escapeHTML(story.title)} ${escapeHTML(story.category)} ${escapeHTML(formatRelativeTime(story.submittedAt))}">
+        <a class="breaking-news-link" href="${storyHref(story)}" aria-label="${escapeHTML(story.title)} ${escapeHTML(story.category)} ${escapeHTML(formatRelativeTime(story.submittedAt))}">
           <span class="breaking-news-title">${escapeHTML(story.title)}</span>
           <span class="breaking-news-meta">${escapeHTML(story.category)} • ${escapeHTML(formatRelativeTime(story.submittedAt))}</span>
         </a>
@@ -334,7 +437,7 @@ const app = (() => {
       .map((story, index) => {
         const normalizedStory = normalizeStory(story, index);
         return `
-          <a class="latest-update-card latest-update-card--text" href="/news.html?story=${normalizedStory.id}" aria-label="${escapeHTML(normalizedStory.title)}">
+          <a class="latest-update-card latest-update-card--text" href="${storyHref(normalizedStory)}" aria-label="${escapeHTML(normalizedStory.title)}">
             <div class="latest-update-card-body">
               <span class="latest-update-badge">${escapeHTML(normalizedStory.category)}</span>
               <h3>${escapeHTML(normalizedStory.title)}</h3>
@@ -488,7 +591,7 @@ const app = (() => {
           <div class="category-panel-layout">
             <div class="category-panel-main">
               ${featuredStory ? `
-                <a class="premium-feature-card" href="/news.html?story=${featuredStory.id}" aria-label="${escapeHTML(featuredStory.title)}">
+                <a class="premium-feature-card" href="${storyHref(featuredStory)}" aria-label="${escapeHTML(featuredStory.title)}">
                   <img src="${featuredStory.image}" alt="${escapeHTML(featuredStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 40vw">
                   <div class="premium-feature-card-body">
                     <div class="premium-topline">
@@ -511,7 +614,7 @@ const app = (() => {
 
               <div class="premium-supporting-grid">
                 ${supportingStories.map((story) => `
-                  <a class="premium-story-card" href="/news.html?story=${story.id}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
+                  <a class="premium-story-card" href="${storyHref(story)}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
                     <div class="premium-story-card-body">
                       <div class="premium-topline">
                         <span class="premium-badge">${escapeHTML(story.category)}</span>
@@ -645,6 +748,8 @@ const app = (() => {
     heroStoryIds = heroIds || [];
     await renderLatestUpdates(heroStoryIds);
     await renderCategorySections(heroStoryIds);
+    await initCategoryPage();
+    await initLatestNewsPage();
     window.clearInterval(categoryRefreshTimer);
     categoryRefreshTimer = window.setInterval(() => {
       renderCategorySections(heroStoryIds);
