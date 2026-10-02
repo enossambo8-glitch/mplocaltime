@@ -89,6 +89,194 @@ const DEFAULT_USER = {
   role: 'journalist'
 };
 
+const MEDIA_UPLOAD_ROOT = process.env.MEDIA_UPLOAD_DIR ? path.resolve(process.env.MEDIA_UPLOAD_DIR) : path.join(__dirname, 'public', 'uploads', 'news');
+const MAX_MEDIA_UPLOAD_BYTES = Number.parseInt(process.env.MEDIA_MAX_BYTES || String(10 * 1024 * 1024), 10) || 10 * 1024 * 1024;
+const ALLOWED_MEDIA_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+function sanitizePlainText(value, maxLength = 2000) {
+  const raw = typeof value === 'string' ? value : String(value ?? '');
+  const withoutTags = raw.replace(/<[^>]+>/g, ' ');
+  return withoutTags.replace(/\0/g, '').replace(/[\u0000-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function normalizeMediaUrl(storedName = '') {
+  const safeName = String(storedName || '').trim();
+  if (!safeName) return '';
+  return `/uploads/news/${safeName}`;
+}
+
+function normalizeMediaRecord(item = {}) {
+  const safeItem = { ...item };
+  delete safeItem.author_id;
+  delete safeItem.authorId;
+  delete safeItem.author;
+  delete safeItem.stored_name;
+  delete safeItem.storedName;
+  const storedName = String(item.stored_name || item.storedName || '');
+  const publicUrl = String(item.public_url || item.url || normalizeMediaUrl(storedName) || '').trim();
+  return {
+    ...safeItem,
+    id: Number(item.id || 0),
+    original_name: item.original_name || item.originalName || '',
+    mime_type: item.mime_type || item.mimeType || 'image/jpeg',
+    size: Number(item.size || item.size_bytes || 0),
+    size_bytes: Number(item.size || item.size_bytes || 0),
+    caption: sanitizePlainText(item.caption || '', 255),
+    alt_text: sanitizePlainText(item.alt_text || item.altText || '', 255),
+    credit: sanitizePlainText(item.credit || '', 255),
+    width: Number(item.width || 0),
+    height: Number(item.height || 0),
+    public_url: publicUrl,
+    url: publicUrl,
+    createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+    updatedAt: item.updatedAt || item.updated_at || item.createdAt || item.created_at || new Date().toISOString(),
+  };
+}
+
+function getImageSignatureType(buffer) {
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) return 'png';
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpeg';
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+function readImageDimensions(buffer) {
+  const signature = getImageSignatureType(buffer);
+  if (!signature) return { width: 0, height: 0 };
+
+  if (signature === 'png') {
+    if (buffer.length < 24) return { width: 0, height: 0 };
+    return { width: buffer.readUInt32BE(8), height: buffer.readUInt32BE(12) };
+  }
+
+  if (signature === 'jpeg') {
+    let offset = 2;
+    while (offset + 8 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      if (marker >= 0xc0 && marker <= 0xdf) {
+        const height = buffer.readUInt16BE(offset + 5);
+        const width = buffer.readUInt16BE(offset + 7);
+        return { width, height };
+      }
+      const length = buffer.readUInt16BE(offset + 2);
+      offset += 2 + length;
+    }
+    return { width: 0, height: 0 };
+  }
+
+  if (signature === 'webp') {
+    return { width: 0, height: 0 };
+  }
+
+  return { width: 0, height: 0 };
+}
+
+async function validateUploadedMediaFile(filePath, originalName = '', mimeType = '') {
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error('uploaded file is missing');
+  }
+  const imageBuffer = fs.readFileSync(filePath);
+  if (!imageBuffer || imageBuffer.length === 0) {
+    throw new Error('uploaded file is empty');
+  }
+  if (imageBuffer.length > MAX_MEDIA_UPLOAD_BYTES) {
+    throw new Error(`uploaded file exceeds the ${MAX_MEDIA_UPLOAD_BYTES} byte limit`);
+  }
+
+  const name = String(originalName || '');
+  const ext = path.extname(name).toLowerCase();
+  const normalizedMime = String(mimeType || '').toLowerCase();
+  const expectedMime = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+  }[ext];
+
+  if (!ALLOWED_MEDIA_EXTENSIONS.has(ext) || !ALLOWED_MEDIA_MIME_TYPES.has(normalizedMime)) {
+    throw new Error('unsupported image type');
+  }
+  if (expectedMime && normalizedMime && expectedMime !== normalizedMime) {
+    throw new Error('image extension and mime type do not match');
+  }
+
+  const signature = getImageSignatureType(imageBuffer);
+  if (!signature) {
+    throw new Error('uploaded file is not a valid JPEG, PNG, or WebP image');
+  }
+
+  const mimeForSignature = {
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  }[signature];
+  if (!mimeForSignature) {
+    throw new Error('uploaded file is not a valid JPEG, PNG, or WebP image');
+  }
+  if (normalizedMime && normalizedMime !== mimeForSignature) {
+    throw new Error('image content and declared mime type do not match');
+  }
+  if (expectedMime && expectedMime !== mimeForSignature) {
+    throw new Error('image extension and file content do not match');
+  }
+
+  const dimensions = readImageDimensions(imageBuffer);
+  return { width: Number(dimensions.width || 0), height: Number(dimensions.height || 0), mimeType: mimeForSignature };
+}
+
+function safeMediaStorageFilename(originalName = '', mimeType = '') {
+  const ext = path.extname(String(originalName || '')).toLowerCase();
+  const normalizedMime = String(mimeType || '').toLowerCase();
+  const mapping = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+  };
+  const chosenExt = mapping[normalizedMime] || ext || '.jpg';
+  if (!ALLOWED_MEDIA_EXTENSIONS.has(chosenExt)) {
+    throw new Error('unsupported image type');
+  }
+  return `${crypto.randomUUID()}${chosenExt}`;
+}
+
+function removeFileIfExists(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    // Ignore cleanup failures for runtime artifacts.
+  }
+}
+
+async function ensureMediaColumns(db) {
+  const columns = await db.all('PRAGMA table_info(media)');
+  const names = columns.map((column) => column.name);
+  const additions = [
+    ['public_url', 'TEXT'],
+    ['alt_text', 'TEXT'],
+    ['credit', 'TEXT'],
+    ['width', 'INTEGER DEFAULT 0'],
+    ['height', 'INTEGER DEFAULT 0'],
+    ['updatedAt', 'TEXT'],
+    ['original_filename', 'TEXT'],
+  ];
+  for (const [column, definition] of additions) {
+    if (!names.includes(column)) {
+      await db.run(`ALTER TABLE media ADD COLUMN ${column} ${definition}`);
+    }
+  }
+  if (!names.includes('stored_name')) {
+    await db.run('ALTER TABLE media ADD COLUMN stored_name TEXT NOT NULL DEFAULT ""');
+  }
+}
+
 async function initializeDatabase() {
   const db = await init();
   try {
@@ -214,7 +402,13 @@ async function initializeDatabase() {
         mime_type TEXT,
         size INTEGER DEFAULT 0,
         caption TEXT,
+        alt_text TEXT,
+        credit TEXT,
+        public_url TEXT,
+        width INTEGER DEFAULT 0,
+        height INTEGER DEFAULT 0,
         createdAt TEXT NOT NULL,
+        updatedAt TEXT,
         author_id INTEGER,
         FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
       );
@@ -462,6 +656,7 @@ async function initializeDatabase() {
     const storyColumnNames = storyColumns.map((column) => column.name);
     const mediaColumns = await db.all('PRAGMA table_info(media)');
     const mediaColumnNames = mediaColumns.map((column) => column.name);
+    await ensureMediaColumns(db);
     const commentColumns = await db.all('PRAGMA table_info(comments)');
     const commentColumnNames = commentColumns.map((column) => column.name);
     const breakingNewsColumns = await db.all('PRAGMA table_info(breaking_news)');
@@ -524,8 +719,26 @@ async function initializeDatabase() {
     if (!mediaColumnNames.includes('caption')) {
       await db.run('ALTER TABLE media ADD COLUMN caption TEXT');
     }
+    if (!mediaColumnNames.includes('alt_text')) {
+      await db.run('ALTER TABLE media ADD COLUMN alt_text TEXT');
+    }
+    if (!mediaColumnNames.includes('credit')) {
+      await db.run('ALTER TABLE media ADD COLUMN credit TEXT');
+    }
+    if (!mediaColumnNames.includes('public_url')) {
+      await db.run('ALTER TABLE media ADD COLUMN public_url TEXT');
+    }
+    if (!mediaColumnNames.includes('width')) {
+      await db.run('ALTER TABLE media ADD COLUMN width INTEGER DEFAULT 0');
+    }
+    if (!mediaColumnNames.includes('height')) {
+      await db.run('ALTER TABLE media ADD COLUMN height INTEGER DEFAULT 0');
+    }
     if (!mediaColumnNames.includes('createdAt')) {
       await db.run('ALTER TABLE media ADD COLUMN createdAt TEXT');
+    }
+    if (!mediaColumnNames.includes('updatedAt')) {
+      await db.run('ALTER TABLE media ADD COLUMN updatedAt TEXT');
     }
     if (!mediaColumnNames.includes('author_id')) {
       await db.run('ALTER TABLE media ADD COLUMN author_id INTEGER');
@@ -864,31 +1077,58 @@ async function initializeDatabase() {
 const SECRET = JWT_SECRET;
 const app = express();
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
+const mediaUploadsDir = path.resolve(MEDIA_UPLOAD_ROOT);
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+}
+if (!fs.existsSync(mediaUploadsDir)) {
+  fs.mkdirSync(mediaUploadsDir, { recursive: true });
 }
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts. Please try again later.' } });
 const publicFormLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 25, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests. Please slow down and try again later.' } });
 const allowedOrigins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000', 'https://mplocaltime.co.za', 'https://www.mplocaltime.co.za']);
 const upload = multer({
   storage: multer.diskStorage({
-    destination: uploadsDir,
+    destination: mediaUploadsDir,
     filename: (req, file, cb) => {
+      const normalizedMime = String(file.mimetype || '').toLowerCase();
+      const safeExt = {
+        'image/jpeg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+      }[normalizedMime] || path.extname(String(file.originalname || '')).toLowerCase() || '.jpg';
       const safeBase = crypto.randomBytes(12).toString('hex');
-      const ext = path.extname(file.originalname || '').toLowerCase();
-      cb(null, `${safeBase}${ext}`);
+      cb(null, `${safeBase}${safeExt}`);
     }
   }),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: MAX_MEDIA_UPLOAD_BYTES, files: 1 },
   fileFilter: (req, file, cb) => {
+    const rawOriginalName = String(file.originalname || '');
+    const traversalPattern = /(^|[\\/])\.\.($|[\\/])|^[A-Za-z]:[\\/]|[\\/]/;
+    if (traversalPattern.test(rawOriginalName)) {
+      return cb(new Error('Invalid uploaded filename.'));
+    }
     const mimeType = String(file.mimetype || '').toLowerCase();
-    const ext = path.extname(String(file.originalname || '')).toLowerCase();
-    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
-    const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.txt', '.pdf', '.doc', '.docx']);
-    if (mimeType.startsWith('image/') || mimeType.startsWith('text/') || allowedMimeTypes.has(mimeType) || allowedExtensions.has(ext)) {
+    const ext = path.extname(rawOriginalName).toLowerCase();
+    const expectedExtForMime = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    }[mimeType];
+    const hasAllowedMime = ALLOWED_MEDIA_MIME_TYPES.has(mimeType);
+    const hasAllowedExt = ALLOWED_MEDIA_EXTENSIONS.has(ext);
+    const extMatchesMime = expectedExtForMime && ext && expectedExtForMime === ext;
+
+    if (hasAllowedMime && hasAllowedExt && extMatchesMime) {
       return cb(null, true);
     }
-    cb(null, true);
+    if (hasAllowedMime && !hasAllowedExt) {
+      return cb(new Error('Image file extension is missing or unsupported.'));
+    }
+    if (!hasAllowedMime && hasAllowedExt) {
+      return cb(new Error('Image file type does not match the uploaded file.'));
+    }
+    cb(new Error('Only JPEG, PNG, and WebP image uploads are allowed.'));
   }
 });
 const ALLOWED_HTML_PAGES = new Set(fs.readdirSync(__dirname).filter((entry) => entry.endsWith('.html')).map((entry) => entry.toLowerCase()));
@@ -2127,6 +2367,9 @@ function canManageEditorialFields(req) {
 function ensureWorkflowTransition(currentStatus, desiredStatus) {
   const from = normalizeCanonicalStoryStatus(currentStatus);
   const to = normalizeCanonicalStoryStatus(desiredStatus);
+  if (from === to) {
+    return { valid: true, current: from, next: to };
+  }
   const allowed = VALID_STORY_TRANSITIONS[from] || [];
   if (!allowed.includes(to)) {
     return {
@@ -2985,23 +3228,89 @@ app.post('/api/media/upload', authMiddleware, requireRole('admin', 'editor', 'jo
   });
 }, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
-  return withDB(async (db) => {
-    const caption = String(req.body.caption || '').trim().slice(0, 255);
-    const createdAt = new Date().toISOString();
-    const originalName = String(req.file.originalname || req.file.filename || 'upload').trim().slice(0, 255);
+  try {
+    const validation = await validateUploadedMediaFile(req.file.path, req.file.originalname, req.file.mimetype);
+    const caption = sanitizePlainText(req.body?.caption || '', 255);
+    const altText = sanitizePlainText(req.body?.alt_text || req.body?.altText || '', 255);
+    const credit = sanitizePlainText(req.body?.credit || '', 255);
+    const originalName = sanitizePlainText(String(req.file.originalname || req.file.filename || 'upload').replace(/\\/g, '/'), 255);
     const storedName = String(req.file.filename || '').trim();
-    const mimeType = String(req.file.mimetype || 'application/octet-stream').trim();
-    const size = Number(req.file.size || 0);
-    const row = await db.run(`INSERT INTO media (original_name, stored_name, mime_type, size, caption, createdAt, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)`, [originalName, storedName, mimeType, size, caption, createdAt, req.user.id]);
-    const media = await db.get(`SELECT * FROM media WHERE id = ?`, [row.lastID]);
-    res.json({ media: { ...media, url: `/uploads/${media.stored_name}` } });
-  });
+    const publicUrl = normalizeMediaUrl(storedName);
+
+    return withDB(async (db) => {
+      const createdAt = new Date().toISOString();
+      const result = await db.run(`INSERT INTO media (original_name, stored_name, mime_type, size, caption, alt_text, credit, public_url, width, height, createdAt, updatedAt, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [originalName, storedName, validation.mimeType, req.file.size, caption, altText, credit, publicUrl, validation.width, validation.height, createdAt, createdAt, req.user.id]);
+      const media = await db.get(`SELECT m.*, u.username as author FROM media m LEFT JOIN users u ON u.id = m.author_id WHERE m.id = ?`, [result.lastID]);
+      res.json({ media: normalizeMediaRecord(media) });
+    }).catch((error) => {
+      removeFileIfExists(req.file.path);
+      throw error;
+    });
+  } catch (error) {
+    removeFileIfExists(req.file && req.file.path);
+    return res.status(400).json({ error: error.message || 'Image validation failed.' });
+  }
 });
 
 app.get('/api/media', authMiddleware, async (req, res) => {
   return withDB(async (db) => {
-    const rows = await db.all(`SELECT m.*, u.username as author FROM media m LEFT JOIN users u ON u.id = m.author_id ORDER BY m.createdAt DESC LIMIT 20`);
-    res.json({ media: rows.map((item) => ({ ...item, url: `/uploads/${item.stored_name}` })) });
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(50, Number.parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    let whereClause = '1 = 1';
+    const params = [];
+    if (q) {
+      whereClause += ` AND (lower(COALESCE(m.original_name, '')) LIKE ? OR lower(COALESCE(m.alt_text, '')) LIKE ? OR lower(COALESCE(m.caption, '')) LIKE ? OR lower(COALESCE(m.credit, '')) LIKE ? OR lower(COALESCE(m.stored_name, '')) LIKE ?)`;
+      const token = `%${q}%`;
+      params.push(token, token, token, token, token);
+    }
+
+    const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM media m WHERE ${whereClause}`, params);
+    const rows = await db.all(`SELECT m.*, u.username as author FROM media m LEFT JOIN users u ON u.id = m.author_id WHERE ${whereClause} ORDER BY COALESCE(m.updatedAt, m.createdAt) DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    const total = Number(totalRow?.cnt || 0);
+    res.json({
+      media: rows.map((item) => normalizeMediaRecord(item)),
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  });
+});
+
+app.get('/api/media/:id', authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'media id required' });
+  return withDB(async (db) => {
+    const media = await db.get(`SELECT m.*, u.username as author FROM media m LEFT JOIN users u ON u.id = m.author_id WHERE m.id = ?`, [id]);
+    if (!media) return res.status(404).json({ error: 'media not found' });
+    res.json({ media: normalizeMediaRecord(media) });
+  });
+});
+
+app.patch('/api/media/:id', authMiddleware, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'media id required' });
+
+  return withDB(async (db) => {
+    const media = await db.get(`SELECT * FROM media WHERE id = ?`, [id]);
+    if (!media) return res.status(404).json({ error: 'media not found' });
+
+    const role = normalizeRoleName(req.user.role || 'user', 'user');
+    const isEditorial = ['admin', 'editor'].includes(role);
+    const canEdit = isEditorial || Number(media.author_id) === Number(req.user.id);
+    if (!canEdit) return res.status(403).json({ error: 'insufficient permissions' });
+
+    const altText = sanitizePlainText(req.body?.alt_text || req.body?.altText || media.alt_text || '', 255);
+    const caption = sanitizePlainText(req.body?.caption || media.caption || '', 255);
+    const credit = sanitizePlainText(req.body?.credit || media.credit || '', 255);
+    const updatedAt = new Date().toISOString();
+
+    await db.run(`UPDATE media SET alt_text = ?, caption = ?, credit = ?, updatedAt = ? WHERE id = ?`, [altText, caption, credit, updatedAt, id]);
+    const updated = await db.get(`SELECT m.*, u.username as author FROM media m LEFT JOIN users u ON u.id = m.author_id WHERE m.id = ?`, [id]);
+    return res.json({ media: normalizeMediaRecord(updated) });
   });
 });
 

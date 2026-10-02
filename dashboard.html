@@ -141,6 +141,56 @@
         </form>
       </section>
 
+      <section class="panel" id="media-library-panel">
+        <div class="panel-header">
+          <h2 style="margin:0;">Media Library</h2>
+        </div>
+        <div class="field-row">
+          <label>
+            Featured image URL
+            <input id="featuredImageUrl" name="featured_image" type="url" placeholder="/uploads/news/..." />
+          </label>
+          <label>
+            Alt text
+            <input id="featuredImageAlt" name="image_alt" type="text" maxlength="255" placeholder="Descriptive alt text" />
+          </label>
+        </div>
+        <div class="field-row" style="margin-top:12px;">
+          <label>
+            Caption
+            <input id="featuredImageCaption" name="image_caption" type="text" maxlength="255" placeholder="Optional caption" />
+          </label>
+          <label>
+            Photo credit
+            <input id="featuredImageCredit" name="image_credit" type="text" maxlength="255" placeholder="Optional credit" />
+          </label>
+        </div>
+        <div style="margin-top:12px; display:grid; gap:12px;">
+          <div class="field-row">
+            <label>
+              Search media
+              <input id="mediaSearch" type="search" placeholder="Filter by filename, alt text or caption" />
+            </label>
+          </div>
+          <div class="field-row">
+            <label>
+              Upload new image
+              <input id="featuredMediaUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+            </label>
+            <div style="display:flex; align-items:end;">
+              <button class="btn secondary" type="button" id="uploadFeaturedMediaButton">Upload image</button>
+            </div>
+          </div>
+          <div id="mediaLibraryPicker" class="field-row" aria-live="polite"></div>
+          <div id="mediaLibraryStatus" class="muted">No media uploaded yet.</div>
+          <div class="panel-header" id="mediaPagination" style="margin-top:8px; display:none;">
+            <button id="mediaPrevPage" class="btn small" type="button">Previous</button>
+            <span id="mediaPageSummary" class="muted">Page 1</span>
+            <button id="mediaNextPage" class="btn small" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" id="content-manager">
         <div class="panel-header">
           <h2 style="margin:0;">Content Manager</h2>
@@ -220,6 +270,21 @@
     const statusFilter = document.getElementById('statusFilter');
     const categoryFilter = document.getElementById('categoryFilter');
     const storySearch = document.getElementById('storySearch');
+    const featuredImageUrlInput = document.getElementById('featuredImageUrl');
+    const featuredImageAltInput = document.getElementById('featuredImageAlt');
+    const featuredImageCaptionInput = document.getElementById('featuredImageCaption');
+    const featuredImageCreditInput = document.getElementById('featuredImageCredit');
+    const mediaLibraryPicker = document.getElementById('mediaLibraryPicker');
+    const mediaLibraryStatus = document.getElementById('mediaLibraryStatus');
+    const mediaSearchInput = document.getElementById('mediaSearch');
+    const mediaPrevPageButton = document.getElementById('mediaPrevPage');
+    const mediaNextPageButton = document.getElementById('mediaNextPage');
+    const mediaPageSummary = document.getElementById('mediaPageSummary');
+    const mediaPagination = document.getElementById('mediaPagination');
+    const featuredMediaUploadInput = document.getElementById('featuredMediaUpload');
+    const uploadFeaturedMediaButton = document.getElementById('uploadFeaturedMediaButton');
+    let mediaPage = 1;
+    let mediaPageTotal = 0;
 
     function escapeHtml(value = '') {
       return String(value)
@@ -317,6 +382,7 @@
       const baseNav = [
         ['Dashboard', '#create-story-panel'],
         ['Create Article', '#create-story-panel'],
+        ['Media Library', '#media-library-panel'],
         ['All Articles', '#content-manager'],
         ['My Drafts', '#content-manager'],
         ['Submitted', '#content-manager'],
@@ -435,6 +501,59 @@
       storyPagination.style.display = total > limit ? 'flex' : 'none';
     }
 
+    function renderMediaPagination(total, page, limit) {
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      mediaPageSummary.textContent = `Page ${page} of ${totalPages}`;
+      mediaPrevPageButton.disabled = page <= 1;
+      mediaNextPageButton.disabled = page >= totalPages || total <= limit;
+      mediaPagination.style.display = total > limit ? 'flex' : 'none';
+    }
+
+    async function loadMediaLibrary(page = 1, search = '') {
+      try {
+        const params = new URLSearchParams({ page: String(page), limit: '6' });
+        if (search) params.set('q', search);
+        const payload = await fetchJson(`/api/media?${params.toString()}`);
+        const items = Array.isArray(payload.media) ? payload.media : [];
+        mediaPageTotal = Number(payload.total || 0);
+
+        if (!items.length) {
+          mediaLibraryPicker.innerHTML = search
+            ? '<div class="muted">No media matched your current search.</div>'
+            : '<div class="muted">No media uploaded yet.</div>';
+          mediaLibraryStatus.textContent = search ? 'No search results found.' : 'No media uploaded yet.';
+          renderMediaPagination(0, page, 6);
+          return;
+        }
+
+        const cards = items.map((item) => {
+          const imageUrl = item.public_url || item.url || '/logo.png';
+          const altText = item.alt_text || item.original_name || 'Newsroom asset';
+          return `
+            <article class="story-item" style="min-width:0;">
+              <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(altText)}" style="width:100%;height:150px;object-fit:cover;border-radius:12px;display:block;margin-bottom:10px;" onerror="this.src='/logo.png'" />
+              <div><strong>${escapeHtml(item.original_name || 'Untitled asset')}</strong></div>
+              <div class="muted">${escapeHtml(item.caption || 'No caption')}</div>
+              <div class="muted">${escapeHtml(item.credit || 'No credit')}</div>
+              <div class="muted">${escapeHtml(item.size_bytes ? `${Math.round(item.size_bytes / 1024)} KB` : 'Unknown size')} • ${escapeHtml(formatZuluDate(item.createdAt || item.created_at))}</div>
+              <div class="story-actions" style="margin-top:10px;">
+                <button class="btn small primary" type="button" data-media-action="select" data-media-id="${item.id}">Select image</button>
+                <button class="btn small" type="button" data-media-action="edit" data-media-id="${item.id}">Edit metadata</button>
+              </div>
+            </article>
+          `;
+        }).join('');
+
+        mediaLibraryPicker.innerHTML = cards;
+        mediaLibraryStatus.textContent = `Loaded ${items.length} image${items.length === 1 ? '' : 's'} from the local library.`;
+        renderMediaPagination(mediaPageTotal, page, 6);
+      } catch (error) {
+        mediaLibraryStatus.textContent = error.message || 'Unable to load media library.';
+        mediaLibraryPicker.innerHTML = '<div class="muted">Unable to load the media library.</div>';
+        renderMediaPagination(0, page, 6);
+      }
+    }
+
     async function loadDashboard() {
       try {
         const response = await fetchJson('/api/dashboard/overview');
@@ -523,6 +642,56 @@
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
+    mediaSearchInput.addEventListener('input', () => {
+      mediaPage = 1;
+      loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
+    });
+
+    mediaPrevPageButton.addEventListener('click', () => {
+      if (mediaPage > 1) {
+        mediaPage -= 1;
+        loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
+      }
+    });
+
+    mediaNextPageButton.addEventListener('click', () => {
+      if (mediaPageTotal > mediaPage * 6) {
+        mediaPage += 1;
+        loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
+      }
+    });
+
+    uploadFeaturedMediaButton.addEventListener('click', async () => {
+      const file = featuredMediaUploadInput.files && featuredMediaUploadInput.files[0];
+      if (!file) {
+        setBanner('Choose an image before uploading it to the library.', 'error');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('caption', featuredImageCaptionInput.value.trim());
+      formData.append('alt_text', featuredImageAltInput.value.trim());
+      formData.append('credit', featuredImageCreditInput.value.trim());
+
+      try {
+        const response = await fetchJson('/api/media/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const media = response.media || {};
+        featuredImageUrlInput.value = media.public_url || media.url || '';
+        featuredImageAltInput.value = media.alt_text || featuredImageAltInput.value || '';
+        featuredImageCaptionInput.value = media.caption || featuredImageCaptionInput.value || '';
+        featuredImageCreditInput.value = media.credit || featuredImageCreditInput.value || '';
+        setBanner(`Uploaded ${media.original_name || 'image'} successfully.`, 'success');
+        featuredMediaUploadInput.value = '';
+        await loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
+      } catch (error) {
+        setBanner(error.message || 'Image upload failed.', 'error');
+      }
+    });
 
     storySearch.addEventListener('input', () => {
       storyPage = 1;
@@ -645,6 +814,52 @@
         return;
       }
 
+      const mediaButton = event.target.closest('[data-media-action]');
+      if (mediaButton) {
+        const mediaAction = mediaButton.dataset.mediaAction;
+        const mediaId = mediaButton.dataset.mediaId;
+        if (mediaAction === 'select') {
+          const item = (mediaLibraryPicker.querySelectorAll('[data-media-id]') || []).length ? null : null;
+          if (!mediaId) return;
+          try {
+            const payload = await fetchJson(`/api/media/${mediaId}`);
+            const media = payload.media || {};
+            const nextUrl = media.public_url || media.url || '';
+            featuredImageUrlInput.value = nextUrl;
+            featuredImageAltInput.value = media.alt_text || '';
+            featuredImageCaptionInput.value = media.caption || '';
+            featuredImageCreditInput.value = media.credit || '';
+            setBanner(`Selected ${media.original_name || 'image'} for this story.`, 'success');
+          } catch (error) {
+            setBanner(error.message || 'Unable to select that media item.', 'error');
+          }
+          return;
+        }
+        if (mediaAction === 'edit') {
+          if (!mediaId) return;
+          try {
+            const payload = await fetchJson(`/api/media/${mediaId}`);
+            const media = payload.media || {};
+            const nextAlt = window.prompt('Alt text', media.alt_text || '');
+            if (nextAlt === null) return;
+            const nextCaption = window.prompt('Caption', media.caption || '');
+            if (nextCaption === null) return;
+            const nextCredit = window.prompt('Photo credit', media.credit || '');
+            if (nextCredit === null) return;
+            const updated = await fetchJson(`/api/media/${mediaId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ alt_text: nextAlt, caption: nextCaption, credit: nextCredit }),
+            });
+            setBanner(`Updated metadata for ${updated.media?.original_name || 'media item'}.`, 'success');
+            await loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
+          } catch (error) {
+            setBanner(error.message || 'Unable to update media metadata.', 'error');
+          }
+          return;
+        }
+      }
+
       const button = event.target.closest('[data-action]');
       if (!button) return;
       const action = button.dataset.action;
@@ -758,6 +973,7 @@
           welcome.textContent = `Logged in as ${escapeHtml(userPayload.user?.username || storedUser || 'User')} (${escapeHtml(currentRole)})`;
           setBanner('Newsroom dashboard ready.', 'info');
           await loadDashboard();
+          await loadMediaLibrary(mediaPage, mediaSearchInput.value.trim());
         })
         .catch((error) => {
           setBanner(error.message || 'Your session could not be validated.', 'error');

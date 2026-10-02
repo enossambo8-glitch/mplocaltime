@@ -411,7 +411,8 @@ test('media upload endpoint stores a file', async () => {
     const loginPayload = await loginResponse.json();
 
     const form = new FormData();
-    form.append('file', new Blob(['hello world'], { type: 'text/plain' }), 'sample.txt');
+    const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAFxg+JAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkGAAAAAAB1l7JQAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkGAAAAAAB1l7JQAAAAAElFTkSuQmCC', 'base64');
+    form.append('file', new Blob([pngBytes], { type: 'image/png' }), 'sample.png');
     form.append('caption', 'Sample upload');
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/media/upload`, {
@@ -423,7 +424,7 @@ test('media upload endpoint stores a file', async () => {
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.ok(payload.media && payload.media.id);
-    assert.match(payload.media.original_name || '', /sample\.txt/);
+    assert.match(payload.media.original_name || '', /sample\.png/);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
