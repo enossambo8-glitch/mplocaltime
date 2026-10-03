@@ -43,6 +43,7 @@ const INITIAL_PASSWORD = process.env.INITIAL_PASSWORD || '';
 const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
 const SEED_DEMO_USERS = Boolean(INITIAL_PASSWORD && INITIAL_USER_PASSWORD);
 const CANONICAL_ROLES = ['admin', 'editor', 'journalist', 'contributor', 'user'];
+const AD_PLACEMENTS = ['homepage_top', 'homepage_mid', 'homepage_sidebar', 'article_top', 'article_inline', 'article_sidebar', 'article_bottom', 'category_top', 'category_sidebar', 'municipality_top', 'municipality_sidebar'];
 let hasResetTestDatabase = false;
 const ROLE_ALIASES = {
   admin: 'admin',
@@ -64,6 +65,91 @@ function normalizeRoleName(value, fallback = 'user') {
   if (!raw) return fallback;
   if (ROLE_ALIASES[raw]) return ROLE_ALIASES[raw];
   return CANONICAL_ROLES.includes(raw) ? raw : fallback;
+}
+
+function normalizeAdvertPlacement(value) {
+  const raw = String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  return AD_PLACEMENTS.includes(raw) ? raw : 'homepage_top';
+}
+
+function parseAdvertDate(value, mode = 'start') {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const isEnd = mode === 'end';
+    const suffix = isEnd ? 'T23:59:59.999Z' : 'T00:00:00.000Z';
+    return new Date(`${raw}${suffix}`).getTime();
+  }
+  return parsed.getTime();
+}
+
+function isCampaignEligibleNow(campaign, referenceDate = new Date()) {
+  if (!campaign) return false;
+  const status = String(campaign.status || '').trim().toLowerCase();
+  if (!['active', 'scheduled'].includes(status)) return false;
+  const now = referenceDate.getTime();
+  const startDate = parseAdvertDate(campaign.start_date, 'start');
+  const endDate = parseAdvertDate(campaign.end_date, 'end');
+  if (startDate !== null && startDate > now) return false;
+  if (endDate !== null && endDate < now) return false;
+  return true;
+}
+
+function normalizeAdvertStatus(value, fallback = 'draft') {
+  const raw = String(value ?? fallback).trim().toLowerCase().replace(/\s+/g, '_');
+  const statuses = ['draft', 'scheduled', 'active', 'paused', 'completed', 'cancelled'];
+  return statuses.includes(raw) ? raw : fallback;
+}
+
+function isSafeAdvertUrl(rawValue) {
+  if (typeof rawValue !== 'string') return false;
+  const value = rawValue.trim();
+  if (!value) return false;
+  const lower = value.toLowerCase();
+  if (['javascript:', 'data:', 'vbscript:'].some((prefix) => lower.startsWith(prefix))) return false;
+  try {
+    const parsed = new URL(value, 'https://example.com');
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch (error) {
+    return false;
+  }
+}
+
+function parseAdvertContext(req) {
+  const query = req?.query || {};
+  return {
+    category: String(query.category || '').trim(),
+    municipality: String(query.municipality || '').trim(),
+    district: String(query.district || '').trim(),
+    town: String(query.town || '').trim(),
+  };
+}
+
+function matchesAdvertTarget(ad, context) {
+  if (!ad || !ad.target_scope || ad.target_scope === 'all') return true;
+  const targetValue = String(ad.target_value || '').trim().toLowerCase();
+  const category = String(context.category || '').trim().toLowerCase();
+  const municipality = String(context.municipality || '').trim().toLowerCase();
+  const district = String(context.district || '').trim().toLowerCase();
+  const town = String(context.town || '').trim().toLowerCase();
+  if (ad.target_scope === 'category') return targetValue === category;
+  if (ad.target_scope === 'municipality') return targetValue === municipality;
+  if (ad.target_scope === 'district') return targetValue === district;
+  if (ad.target_scope === 'town') return targetValue === town;
+  return true;
+}
+
+function parseNumericParam(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseFloatParam(value, fallback = 0) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function parseCanonicalRole(value, { allowDefaultUser = true, fallback = 'user' } = {}) {
@@ -435,6 +521,67 @@ async function initializeDatabase() {
         text TEXT,
         at TEXT,
         FOREIGN KEY(story_id) REFERENCES stories(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS advertisers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_name TEXT NOT NULL,
+        contact_name TEXT,
+        email TEXT,
+        phone TEXT,
+        website TEXT,
+        status TEXT DEFAULT 'active',
+        notes TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS ad_campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        advertiser_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        start_date TEXT,
+        end_date TEXT,
+        status TEXT DEFAULT 'draft',
+        target_scope TEXT DEFAULT 'all',
+        target_value TEXT,
+        pricing_model TEXT DEFAULT 'fixed',
+        agreed_amount REAL DEFAULT 0,
+        currency TEXT DEFAULT 'ZAR',
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(advertiser_id) REFERENCES advertisers(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS advertisements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        image_url TEXT NOT NULL,
+        destination_url TEXT NOT NULL,
+        alt_text TEXT,
+        placement TEXT NOT NULL DEFAULT 'homepage_top',
+        status TEXT DEFAULT 'active',
+        label TEXT DEFAULT 'Advertisement',
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(campaign_id) REFERENCES ad_campaigns(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS ad_impressions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        advertisement_id INTEGER NOT NULL,
+        campaign_id INTEGER NOT NULL,
+        placement TEXT NOT NULL,
+        created_at TEXT,
+        FOREIGN KEY(advertisement_id) REFERENCES advertisements(id) ON DELETE CASCADE,
+        FOREIGN KEY(campaign_id) REFERENCES ad_campaigns(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS ad_clicks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        advertisement_id INTEGER NOT NULL,
+        campaign_id INTEGER NOT NULL,
+        placement TEXT NOT NULL,
+        referer TEXT,
+        created_at TEXT,
+        FOREIGN KEY(advertisement_id) REFERENCES advertisements(id) ON DELETE CASCADE,
+        FOREIGN KEY(campaign_id) REFERENCES ad_campaigns(id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS correction_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4321,6 +4468,235 @@ app.get('/api/admin/notifications', authMiddleware, requireRole('admin', 'editor
   });
 });
 
+app.get('/api/admin/advertising/overview', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const overview = await db.get(`
+      SELECT
+        (SELECT COUNT(*) FROM advertisers WHERE status = 'active') as activeAdvertisers,
+        (SELECT COUNT(*) FROM ad_campaigns WHERE status = 'active') as activeCampaigns,
+        (SELECT COUNT(*) FROM ad_campaigns WHERE status = 'scheduled') as scheduledCampaigns,
+        (SELECT COUNT(*) FROM ad_campaigns WHERE status IN ('paused', 'completed', 'cancelled')) as inactiveCampaigns,
+        (SELECT COALESCE(SUM(impressions), 0) FROM (
+          SELECT COUNT(*) as impressions FROM ad_impressions GROUP BY advertisement_id
+        )) as totalImpressions,
+        (SELECT COALESCE(SUM(clicks), 0) FROM (
+          SELECT COUNT(*) as clicks FROM ad_clicks GROUP BY advertisement_id
+        )) as totalClicks
+    `);
+    const totalImpressions = Number(overview?.totalImpressions || 0);
+    const totalClicks = Number(overview?.totalClicks || 0);
+    const placements = AD_PLACEMENTS.map((placement) => ({ placement, label: placement.replace(/_/g, ' ') }));
+    res.json({
+      overview: {
+        ...overview,
+        totalImpressions,
+        totalClicks,
+        ctr: totalImpressions > 0 ? Number(((totalClicks / totalImpressions) * 100).toFixed(2)) : 0,
+      },
+      placements,
+    });
+  });
+});
+
+app.get('/api/admin/advertisers', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const advertisers = await db.all(`SELECT * FROM advertisers ORDER BY created_at DESC`);
+    res.json({ advertisers });
+  });
+});
+
+app.post('/api/admin/advertisers', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const { business_name, contact_name, email, phone, website, status, notes } = req.body || {};
+  const businessName = String(business_name || '').trim();
+  if (!businessName) return res.status(400).json({ error: 'business_name required' });
+  const safeEmail = String(email || '').trim();
+  const safeWebsite = String(website || '').trim();
+  if (safeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail)) return res.status(400).json({ error: 'email must be valid' });
+  if (safeWebsite && !isSafeAdvertUrl(safeWebsite)) return res.status(400).json({ error: 'website URL is invalid' });
+  return withDB(async (db) => {
+    const createdAt = new Date().toISOString();
+    const row = await db.run(`INSERT INTO advertisers (business_name, contact_name, email, phone, website, status, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [businessName, String(contact_name || '').trim(), safeEmail, String(phone || '').trim(), safeWebsite, ['active', 'inactive'].includes(status) ? status : 'active', String(notes || '').trim(), createdAt, createdAt]);
+    const advertiser = await db.get(`SELECT * FROM advertisers WHERE id = ?`, [row.lastID]);
+    res.status(201).json({ advertiser });
+  });
+});
+
+app.patch('/api/admin/advertisers/:id', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = parseNumericParam(req.params.id, 0);
+  if (!id) return res.status(400).json({ error: 'advertiser id required' });
+  const { business_name, contact_name, email, phone, website, status, notes } = req.body || {};
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM advertisers WHERE id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'advertiser not found' });
+    const safeEmail = typeof email === 'undefined' ? existing.email : String(email || '').trim();
+    const safeWebsite = typeof website === 'undefined' ? existing.website : String(website || '').trim();
+    if (safeEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail)) return res.status(400).json({ error: 'email must be valid' });
+    if (safeWebsite && !isSafeAdvertUrl(safeWebsite)) return res.status(400).json({ error: 'website URL is invalid' });
+    const nextBusiness = typeof business_name === 'undefined' ? existing.business_name : String(business_name || '').trim();
+    if (!nextBusiness) return res.status(400).json({ error: 'business_name required' });
+    await db.run(`UPDATE advertisers SET business_name = ?, contact_name = ?, email = ?, phone = ?, website = ?, status = ?, notes = ?, updated_at = ? WHERE id = ?`, [nextBusiness, typeof contact_name === 'undefined' ? (existing.contact_name || '') : String(contact_name || '').trim(), safeEmail, typeof phone === 'undefined' ? (existing.phone || '') : String(phone || '').trim(), safeWebsite, ['active', 'inactive'].includes(status || existing.status) ? (status || existing.status) : existing.status, typeof notes === 'undefined' ? (existing.notes || '') : String(notes || '').trim(), new Date().toISOString(), id]);
+    const advertiser = await db.get(`SELECT * FROM advertisers WHERE id = ?`, [id]);
+    res.json({ advertiser });
+  });
+});
+
+app.get('/api/admin/ad-campaigns', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const campaigns = await db.all(`SELECT c.*, a.business_name as advertiser FROM ad_campaigns c LEFT JOIN advertisers a ON a.id = c.advertiser_id ORDER BY c.created_at DESC`);
+    res.json({ campaigns });
+  });
+});
+
+app.get('/api/admin/ad-campaigns/:id/performance', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = parseNumericParam(req.params.id, 0);
+  if (!id) return res.status(400).json({ error: 'campaign id required' });
+  return withDB(async (db) => {
+    const campaign = await db.get(`SELECT * FROM ad_campaigns WHERE id = ?`, [id]);
+    if (!campaign) return res.status(404).json({ error: 'campaign not found' });
+    const [impressionRow, clickRow] = await Promise.all([
+      db.get(`SELECT COUNT(*) AS count FROM ad_impressions WHERE campaign_id = ?`, [id]),
+      db.get(`SELECT COUNT(*) AS count FROM ad_clicks WHERE campaign_id = ?`, [id]),
+    ]);
+    const impressions = Number(impressionRow?.count || 0);
+    const clicks = Number(clickRow?.count || 0);
+    res.json({
+      campaign_id: id,
+      impressions,
+      clicks,
+      ctr: impressions > 0 ? Number(((clicks / impressions) * 100).toFixed(2)) : 0,
+    });
+  });
+});
+
+app.post('/api/admin/ad-campaigns', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const { advertiser_id, name, start_date, end_date, status, target_scope, target_value, pricing_model, agreed_amount, currency } = req.body || {};
+  if (!advertiser_id || !name) return res.status(400).json({ error: 'advertiser_id and name are required' });
+  return withDB(async (db) => {
+    const advertiser = await db.get(`SELECT id FROM advertisers WHERE id = ?`, [advertiser_id]);
+    if (!advertiser) return res.status(404).json({ error: 'advertiser not found' });
+    const safeStatus = normalizeAdvertStatus(status, 'draft');
+    const safeScope = ['all', 'category', 'municipality', 'district', 'town'].includes(target_scope) ? target_scope : 'all';
+    const createdAt = new Date().toISOString();
+    const row = await db.run(`INSERT INTO ad_campaigns (advertiser_id, name, start_date, end_date, status, target_scope, target_value, pricing_model, agreed_amount, currency, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [advertiser_id, String(name).trim(), start_date || null, end_date || null, safeStatus, safeScope, String(target_value || '').trim() || null, String(pricing_model || 'fixed').trim() || 'fixed', parseFloatParam(agreed_amount, 0), String(currency || 'ZAR').trim() || 'ZAR', createdAt, createdAt]);
+    const campaign = await db.get(`SELECT c.*, a.business_name as advertiser FROM ad_campaigns c LEFT JOIN advertisers a ON a.id = c.advertiser_id WHERE c.id = ?`, [row.lastID]);
+    res.status(201).json({ campaign });
+  });
+});
+
+app.patch('/api/admin/ad-campaigns/:id', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = parseNumericParam(req.params.id, 0);
+  if (!id) return res.status(400).json({ error: 'campaign id required' });
+  const { name, start_date, end_date, status, target_scope, target_value, pricing_model, agreed_amount, currency } = req.body || {};
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM ad_campaigns WHERE id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'campaign not found' });
+    if (name !== undefined && !String(name || '').trim()) return res.status(400).json({ error: 'campaign name required' });
+    const safeStatus = normalizeAdvertStatus(status !== undefined ? status : existing.status, 'draft');
+    const safeScope = ['all', 'category', 'municipality', 'district', 'town'].includes(target_scope !== undefined ? target_scope : existing.target_scope) ? (target_scope !== undefined ? target_scope : existing.target_scope) : (existing.target_scope || 'all');
+    await db.run(`UPDATE ad_campaigns SET name = ?, start_date = ?, end_date = ?, status = ?, target_scope = ?, target_value = ?, pricing_model = ?, agreed_amount = ?, currency = ?, updated_at = ? WHERE id = ?`, [name !== undefined ? String(name || '').trim() : existing.name, start_date !== undefined ? (start_date || null) : existing.start_date, end_date !== undefined ? (end_date || null) : existing.end_date, safeStatus, safeScope, target_value !== undefined ? (String(target_value || '').trim() || null) : existing.target_value, pricing_model !== undefined ? (String(pricing_model || 'fixed').trim() || 'fixed') : (existing.pricing_model || 'fixed'), agreed_amount !== undefined ? parseFloatParam(agreed_amount, existing.agreed_amount || 0) : (existing.agreed_amount || 0), currency !== undefined ? (String(currency || 'ZAR').trim() || 'ZAR') : (existing.currency || 'ZAR'), new Date().toISOString(), id]);
+    const campaign = await db.get(`SELECT c.*, a.business_name as advertiser FROM ad_campaigns c LEFT JOIN advertisers a ON a.id = c.advertiser_id WHERE c.id = ?`, [id]);
+    res.json({ campaign });
+  });
+});
+
+app.get('/api/admin/advertisements', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  return withDB(async (db) => {
+    const advertisements = await db.all(`SELECT a.*, c.name as campaign_name, adv.business_name as advertiser_name FROM advertisements a LEFT JOIN ad_campaigns c ON c.id = a.campaign_id LEFT JOIN advertisers adv ON adv.id = c.advertiser_id ORDER BY a.created_at DESC`);
+    res.json({ advertisements });
+  });
+});
+
+app.post('/api/admin/advertisements', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const { campaign_id, title, image_url, destination_url, alt_text, placement, status, label } = req.body || {};
+  if (!campaign_id || !title || !image_url || !destination_url) return res.status(400).json({ error: 'campaign_id, title, image_url and destination_url are required' });
+  if (!isSafeAdvertUrl(destination_url)) return res.status(400).json({ error: 'destination_url must use http or https' });
+  if (!isSafeAdvertUrl(image_url) && !/^\//.test(String(image_url || '').trim())) return res.status(400).json({ error: 'image_url must use http(s) or a site-relative path' });
+  return withDB(async (db) => {
+    const campaign = await db.get(`SELECT id FROM ad_campaigns WHERE id = ?`, [campaign_id]);
+    if (!campaign) return res.status(404).json({ error: 'campaign not found' });
+    const safeStatus = ['active', 'paused', 'draft'].includes(status) ? status : 'active';
+    const safePlacement = normalizeAdvertPlacement(placement);
+    const row = await db.run(`INSERT INTO advertisements (campaign_id, title, image_url, destination_url, alt_text, placement, status, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [campaign_id, String(title).trim(), String(image_url).trim(), String(destination_url).trim(), String(alt_text || '').trim(), safePlacement, safeStatus, String(label || 'Advertisement').trim() || 'Advertisement', new Date().toISOString(), new Date().toISOString()]);
+    const advertisement = await db.get(`SELECT a.*, c.name as campaign_name, adv.business_name as advertiser_name FROM advertisements a LEFT JOIN ad_campaigns c ON c.id = a.campaign_id LEFT JOIN advertisers adv ON adv.id = c.advertiser_id WHERE a.id = ?`, [row.lastID]);
+    res.status(201).json({ advertisement });
+  });
+});
+
+app.patch('/api/admin/advertisements/:id', authMiddleware, requireRole('admin', 'editor'), async (req, res) => {
+  const id = parseNumericParam(req.params.id, 0);
+  if (!id) return res.status(400).json({ error: 'advertisement id required' });
+  const { title, image_url, destination_url, alt_text, placement, status, label } = req.body || {};
+  return withDB(async (db) => {
+    const existing = await db.get(`SELECT * FROM advertisements WHERE id = ?`, [id]);
+    if (!existing) return res.status(404).json({ error: 'advertisement not found' });
+    if (destination_url !== undefined && !isSafeAdvertUrl(destination_url)) return res.status(400).json({ error: 'destination_url must use http or https' });
+    if (image_url !== undefined && !isSafeAdvertUrl(image_url) && !/^\//.test(String(image_url || '').trim())) return res.status(400).json({ error: 'image_url must use http(s) or a site-relative path' });
+    const nextTitle = title !== undefined ? String(title || '').trim() : existing.title;
+    const nextImage = image_url !== undefined ? String(image_url || '').trim() : existing.image_url;
+    const nextDestination = destination_url !== undefined ? String(destination_url || '').trim() : existing.destination_url;
+    await db.run(`UPDATE advertisements SET title = ?, image_url = ?, destination_url = ?, alt_text = ?, placement = ?, status = ?, label = ?, updated_at = ? WHERE id = ?`, [nextTitle, nextImage, nextDestination, alt_text !== undefined ? String(alt_text || '').trim() : existing.alt_text, placement !== undefined ? normalizeAdvertPlacement(placement) : existing.placement, status !== undefined ? (['active', 'paused', 'draft'].includes(status) ? status : existing.status) : existing.status, label !== undefined ? String(label || 'Advertisement').trim() : existing.label, new Date().toISOString(), id]);
+    const advertisement = await db.get(`SELECT a.*, c.name as campaign_name, adv.business_name as advertiser_name FROM advertisements a LEFT JOIN ad_campaigns c ON c.id = a.campaign_id LEFT JOIN advertisers adv ON adv.id = c.advertiser_id WHERE a.id = ?`, [id]);
+    res.json({ advertisement });
+  });
+});
+
+async function getAdvertForPlacement(db, placement, context = {}) {
+  const rows = await db.all(`
+    SELECT a.*, c.name as campaign_name, c.status as campaign_status, c.target_scope, c.target_value, c.start_date, c.end_date, adv.business_name, adv.status as advertiser_status
+    FROM advertisements a
+    JOIN ad_campaigns c ON c.id = a.campaign_id
+    JOIN advertisers adv ON adv.id = c.advertiser_id
+    WHERE a.status = 'active'
+      AND a.placement = ?
+      AND c.status IN ('active', 'scheduled')
+      AND adv.status = 'active'
+      AND (c.start_date IS NULL OR c.start_date <= ?)
+      AND (c.end_date IS NULL OR c.end_date >= ?)
+    ORDER BY a.updated_at DESC, a.id DESC
+  `, [placement, new Date().toISOString(), new Date().toISOString()]);
+  const eligible = rows.filter((row) => matchesAdvertTarget(row, context));
+  return eligible[0] || null;
+}
+
+app.get('/api/ads/:placement', async (req, res) => {
+  const placement = normalizeAdvertPlacement(req.params.placement || 'homepage_top');
+  const context = parseAdvertContext(req);
+  return withDB(async (db) => {
+    const ad = await getAdvertForPlacement(db, placement, context);
+    if (!ad) return res.json({ placement, advertisement: null });
+    const impressionCreatedAt = new Date().toISOString();
+    await db.run(`INSERT INTO ad_impressions (advertisement_id, campaign_id, placement, created_at) VALUES (?, ?, ?, ?)`, [ad.id, ad.campaign_id, placement, impressionCreatedAt]);
+    const clickUrl = `/ad/click/${ad.id}`;
+    const advertisement = {
+      id: Number(ad.id),
+      campaign_id: Number(ad.campaign_id),
+      title: ad.title,
+      image_url: ad.image_url,
+      destination_url: ad.destination_url,
+      alt_text: ad.alt_text || ad.title,
+      placement,
+      label: ad.label || 'Advertisement',
+      business_name: ad.business_name,
+      click_url: clickUrl,
+    };
+    res.json({ placement, advertisement });
+  });
+});
+
+app.get('/ad/click/:id', async (req, res) => {
+  const id = parseNumericParam(req.params.id, 0);
+  if (!id) return res.status(400).send('Advert not found');
+  return withDB(async (db) => {
+    const ad = await db.get(`SELECT a.*, c.name AS campaign_name, c.status AS campaign_status, c.target_scope, c.target_value, c.start_date, c.end_date, adv.business_name, adv.status AS advertiser_status FROM advertisements a JOIN ad_campaigns c ON c.id = a.campaign_id JOIN advertisers adv ON adv.id = c.advertiser_id WHERE a.id = ? AND a.status = 'active'`, [id]);
+    if (!ad) return res.status(404).send('Advert not found');
+    if (!isCampaignEligibleNow(ad, new Date()) || String(ad.advertiser_status || '').toLowerCase() !== 'active') return res.status(404).send('Advert not found');
+    const destination = String(ad.destination_url || '').trim();
+    if (!isSafeAdvertUrl(destination)) return res.status(400).send('Unsafe destination');
+    await db.run(`INSERT INTO ad_clicks (advertisement_id, campaign_id, placement, referer, created_at) VALUES (?, ?, ?, ?, ?)`, [ad.id, ad.campaign_id, ad.placement, String(req.headers.referer || '').slice(0, 500), new Date().toISOString()]);
+    res.redirect(302, destination);
+  });
+});
+
 app.get('/api/stories/:id', async (req, res) => {
   const id = req.params.id;
   return withDB(async (db) => {
@@ -4653,6 +5029,7 @@ app.get('/story/:id', async (req, res) => {
                     <button type="button" class="share-button" data-article-share="facebook" data-url="${escapeHtml(shareUrl)}">Facebook</button>
                   </div>
                   <div class="cm-entry-summary article-content">${contentHtml}</div>
+                  <div class="ad-slot" data-ad-slot="article_top" aria-label="Advertisement"></div>
                   ${tagsHtml}
                 </div>
               </article>

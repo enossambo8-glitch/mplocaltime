@@ -468,6 +468,7 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
     </section>
 
     <div class="grid">
+      <div class="ad-slot" data-ad-slot="municipality_top" aria-label="Advertisement"></div>
       <section aria-label="Latest news">
         ${featured ? `
           <div class="card">
@@ -506,6 +507,9 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
       </section>
 
       <aside class="sidebar" aria-label="Municipality sidebar">
+        <div class="card">
+          <div class="ad-slot" data-ad-slot="municipality_sidebar" aria-label="Advertisement"></div>
+        </div>
         <div class="card">
           <h3 style="margin-top:0;">Trending articles</h3>
           <ul>

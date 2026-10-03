@@ -3122,3 +3122,54 @@ body.dashboard-page {
     width: auto;
   }
 }
+
+.ad-slot {
+  display: block;
+  margin: 1.25rem 0;
+}
+
+.advertisement-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border, #dfe3e8);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.04);
+}
+
+.advertisement-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #5f6c7b);
+  font-weight: 700;
+}
+
+.advertisement-card a {
+  display: block;
+}
+
+.advertisement-card img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #f4f4f5;
+}
+
+.advertisement-meta {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.advertisement-meta strong {
+  font-size: 1rem;
+}
+
+.advertisement-meta span {
+  color: var(--muted, #5f6c7b);
+  font-size: 0.82rem;
+}

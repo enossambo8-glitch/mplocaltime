@@ -51,6 +51,49 @@
         <div id="mediaGrid"></div>
       </div>
     </section>
+
+    <section class="card">
+      <div class="card-content">
+        <h2>Advertising overview</h2>
+        <div id="advertisingOverview" class="meta" style="margin-bottom:12px;">Loading advertising metrics…</div>
+        <div style="display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));">
+          <form id="advertiserForm" style="display:grid;gap:10px;">
+            <h3>Create advertiser</h3>
+            <input name="business_name" placeholder="Business name" required />
+            <input name="contact_name" placeholder="Contact name" />
+            <input name="email" type="email" placeholder="Email" />
+            <input name="phone" placeholder="Phone" />
+            <input name="website" type="url" placeholder="Website URL" />
+            <button class="btn primary" type="submit">Create advertiser</button>
+            <p id="advertiserMessage" class="meta"></p>
+          </form>
+          <form id="campaignForm" style="display:grid;gap:10px;">
+            <h3>Create campaign</h3>
+            <input name="advertiser_id" placeholder="Advertiser ID" required />
+            <input name="name" placeholder="Campaign name" required />
+            <select name="status">
+              <option value="draft">Draft</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="active">Active</option>
+            </select>
+            <input name="start_date" type="date" />
+            <input name="end_date" type="date" />
+            <button class="btn primary" type="submit">Create campaign</button>
+            <p id="campaignMessage" class="meta"></p>
+          </form>
+          <form id="adForm" style="display:grid;gap:10px;">
+            <h3>Create advertisement</h3>
+            <input name="campaign_id" placeholder="Campaign ID" required />
+            <input name="title" placeholder="Ad title" required />
+            <input name="image_url" placeholder="Image URL" required />
+            <input name="destination_url" type="url" placeholder="Destination URL" required />
+            <input name="placement" placeholder="Placement (e.g. homepage_top)" value="homepage_top" />
+            <button class="btn primary" type="submit">Create advertisement</button>
+            <p id="adMessage" class="meta"></p>
+          </form>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -122,6 +165,86 @@
       }
     });
 
+    async function loadAdvertisingOverview() {
+      const overviewEl = document.getElementById('advertisingOverview');
+      if (!token) {
+        overviewEl.textContent = 'Sign in to view advertising analytics.';
+        return;
+      }
+      try {
+        const response = await fetch('/api/admin/advertising/overview', { headers: { Authorization: 'Bearer ' + token } });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Unable to load overview');
+        const overview = payload.overview || {};
+        overviewEl.textContent = `Active advertisers: ${overview.activeAdvertisers || 0} • Active campaigns: ${overview.activeCampaigns || 0} • Scheduled: ${overview.scheduledCampaigns || 0} • Impressions: ${overview.totalImpressions || 0} • Clicks: ${overview.totalClicks || 0}`;
+      } catch (error) {
+        overviewEl.textContent = 'Advertising analytics are unavailable.';
+      }
+    }
+
+    async function createAdvertiser(event) {
+      event.preventDefault();
+      if (!token) { document.getElementById('advertiserMessage').textContent = 'Please sign in to create an advertiser.'; return; }
+      const formData = new FormData(event.target);
+      const payload = Object.fromEntries(formData.entries());
+      try {
+        const response = await fetch('/api/admin/advertisers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Advertiser creation failed');
+        document.getElementById('advertiserMessage').textContent = `Advertiser created: ${result.advertiser.business_name}`;
+        event.target.reset();
+        loadAdvertisingOverview();
+      } catch (error) {
+        document.getElementById('advertiserMessage').textContent = error.message;
+      }
+    }
+
+    async function createCampaign(event) {
+      event.preventDefault();
+      if (!token) { document.getElementById('campaignMessage').textContent = 'Please sign in to create a campaign.'; return; }
+      const formData = new FormData(event.target);
+      const payload = Object.fromEntries(formData.entries());
+      try {
+        const response = await fetch('/api/admin/ad-campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ ...payload, advertiser_id: Number(payload.advertiser_id) || null }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Campaign creation failed');
+        document.getElementById('campaignMessage').textContent = `Campaign created: ${result.campaign.name}`;
+        event.target.reset();
+        loadAdvertisingOverview();
+      } catch (error) {
+        document.getElementById('campaignMessage').textContent = error.message;
+      }
+    }
+
+    async function createAdvertisement(event) {
+      event.preventDefault();
+      if (!token) { document.getElementById('adMessage').textContent = 'Please sign in to create an advertisement.'; return; }
+      const formData = new FormData(event.target);
+      const payload = Object.fromEntries(formData.entries());
+      try {
+        const response = await fetch('/api/admin/advertisements', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ ...payload, campaign_id: Number(payload.campaign_id) || null }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Advertisement creation failed');
+        document.getElementById('adMessage').textContent = `Advertisement created: ${result.advertisement.title}`;
+        event.target.reset();
+        loadAdvertisingOverview();
+      } catch (error) {
+        document.getElementById('adMessage').textContent = error.message;
+      }
+    }
+
     async function loadAdminSession() {
       if (!token) {
         adminStatus.textContent = 'Please sign in to unlock control panel actions.';
@@ -138,8 +261,13 @@
       }
     }
 
+    document.getElementById('advertiserForm').addEventListener('submit', createAdvertiser);
+    document.getElementById('campaignForm').addEventListener('submit', createCampaign);
+    document.getElementById('adForm').addEventListener('submit', createAdvertisement);
+
     loadAdminSession();
     loadMedia();
+    loadAdvertisingOverview();
   </script>
 </body>
 </html>

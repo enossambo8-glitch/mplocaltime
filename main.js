@@ -189,6 +189,57 @@ const app = (() => {
     }
   };
 
+  const buildAdMarkup = (advertisement) => {
+    if (!advertisement) return '';
+    const label = appointmentValue(advertisement.label || 'Advertisement');
+    const title = escapeHTML(advertisement.title || 'Advertisement');
+    const alt = escapeHTML(advertisement.alt_text || title || 'Advertisement');
+    const image = escapeHTML(advertisement.image_url || '/logo.png');
+    const clickUrl = escapeHTML(advertisement.click_url || '/');
+    return `
+      <aside class="advertisement-card" aria-label="Advertisement">
+        <div class="advertisement-label">${label}</div>
+        <a href="${clickUrl}" target="_blank" rel="noopener noreferrer" aria-label="Open advertised content: ${alt}">
+          <img src="${image}" alt="${alt}" loading="lazy" decoding="async" />
+        </a>
+        <div class="advertisement-meta">
+          <strong>${title}</strong>
+          <span>${escapeHTML(advertisement.business_name || 'Local partner')}</span>
+        </div>
+      </aside>
+    `;
+  };
+
+  const appointmentValue = (value) => String(value || 'Advertisement');
+
+  const initAdvertisingSlots = async () => {
+    const slots = utils.qsa('[data-ad-slot]');
+    if (!slots.length) return;
+    const queryParams = new URLSearchParams();
+    const categoryNode = document.querySelector('[data-category]');
+    const category = categoryNode?.dataset.category || document.body?.dataset?.category || '';
+    if (category) queryParams.set('category', category);
+    const municipality = document.querySelector('[data-municipality]')?.dataset.municipality || document.body?.dataset?.municipality || '';
+    if (municipality) queryParams.set('municipality', municipality);
+    const district = document.querySelector('[data-district]')?.dataset.district || document.body?.dataset?.district || '';
+    if (district) queryParams.set('district', district);
+    const town = document.querySelector('[data-town]')?.dataset.town || document.body?.dataset?.town || '';
+    if (town) queryParams.set('town', town);
+    const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    for (const slot of slots) {
+      const placement = slot.dataset.adSlot;
+      if (!placement) continue;
+      try {
+        const response = await fetch(`/api/ads/${encodeURIComponent(placement)}${queryString}`);
+        if (!response.ok) throw new Error('advert fetch failed');
+        const payload = await response.json();
+        slot.innerHTML = payload?.advertisement ? buildAdMarkup(payload.advertisement) : '';
+      } catch (error) {
+        slot.innerHTML = '';
+      }
+    }
+  };
+
   const initScroll = () => {
     const progress = utils.qs('.reading-progress');
     const backToTop = utils.qs('#backToTop');
@@ -781,6 +832,7 @@ const app = (() => {
     await renderCategorySections(heroStoryIds);
     await initCategoryPage();
     await initLatestNewsPage();
+    await initAdvertisingSlots();
     window.clearInterval(categoryRefreshTimer);
     categoryRefreshTimer = window.setInterval(() => {
       renderCategorySections(heroStoryIds);
