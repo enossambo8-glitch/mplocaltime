@@ -13,6 +13,9 @@
   },
   "homepage": "https://github.com/mplocaltime-ceo/mplocaltime#readme",
   "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
@@ -20,6 +23,7 @@
     "db:migrate": "node init_db.js",
     "db:status": "node scripts/db-status.js",
     "db:backup": "node scripts/db-backup.js",
+    "production:check": "NODE_ENV=production node scripts/production-check.js",
     "test": "NODE_ENV=test node --test --test-concurrency=1 tests/**/*.test.js"
   },
   "dependencies": {

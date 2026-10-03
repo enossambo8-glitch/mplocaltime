@@ -1,10 +1,10 @@
 # Production database and server migration
 
-This repository is prepared for a controlled production migration without performing the live cutover in Codespaces. The purpose of this guide is to document the safe procedure for later deployment on the real server.
+This repository is prepared for a controlled production migration without performing the live cutover in Codespaces. The purpose of this guide is to document the safe procedure for the real server environment once the server-side account and domain are available.
 
 ## 1. Checkpoint and validation
 
-Before any production migration work, verify the repository is at the intended checkpoint and the application test suite remains green.
+Before production migration work, verify the repository is at the intended checkpoint and the application test suite remains green.
 
 ```bash
 git status --short --branch
@@ -13,7 +13,7 @@ git log -7 --oneline
 npm test -- --test-reporter=spec
 ```
 
-The MLT-009 checkpoint expects a clean branch plus a passing baseline.
+The MLT-009 checkpoint expects a clean branch plus a passing baseline. MLT-010 adds the final repository-side deployment package and documentation only.
 
 ## 2. Configure production environment
 
@@ -24,8 +24,9 @@ Required values for production include:
 ```bash
 NODE_ENV=production
 PORT=3000
+HOST=0.0.0.0
 DATABASE_PATH=/home/<account>/data/mplocaltime.db
-SITE_URL=https://www.mplocaltime.co.za
+SITE_URL=https://www.example.com
 JWT_SECRET=<secure-random-secret>
 INITIAL_PASSWORD=<temporary-admin-password>
 INITIAL_USER_PASSWORD=<temporary-user-password>
@@ -35,7 +36,6 @@ ADSENSE_ENABLED=false
 Optional values:
 
 ```bash
-HOST=127.0.0.1
 TRUST_PROXY=1
 MEDIA_UPLOAD_DIR=/home/<account>/data/uploads
 MEDIA_MAX_BYTES=10485760
@@ -56,8 +56,11 @@ Use a dedicated directory owned by the application account, for example:
 
 ```bash
 mkdir -p /home/<account>/data
-chown <account>:<group> /home/<account>/data
-chmod 700 /home/<account>/data
+mkdir -p /home/<account>/data/uploads
+mkdir -p /home/<account>/backups
+chown <account>:<group> /home/<account>/data /home/<account>/data/uploads /home/<account>/backups
+chmod 700 /home/<account>/data /home/<account>/backups
+chmod 750 /home/<account>/data/uploads
 ```
 
 The SQLite database file may live under that directory, for example:
@@ -66,7 +69,7 @@ The SQLite database file may live under that directory, for example:
 /home/<account>/data/mplocaltime.db
 ```
 
-Do not place the database inside a public web root or a document directory that is exposed directly by Apache/nginx.
+Do not place the database inside a public web root or a document directory exposed directly by Apache/nginx.
 
 ## 4. Migration command
 
@@ -76,7 +79,7 @@ Run the migration/bootstrap command before starting the server:
 npm run db:migrate
 ```
 
-The migration entry point is the same code path used by application startup. This command is idempotent and safe to re-run.
+The migration entry point is the same code path used by application startup; it is idempotent and safe to re-run.
 
 ## 5. Check status before startup
 
@@ -88,13 +91,13 @@ This prints the configured database path and the newest recorded schema version.
 
 ## 6. Backup the existing production database
 
-Before any upgrades or configuration changes, create a dedicated backup.
+Before any upgrades or configuration changes, create a dedicated backup:
 
 ```bash
 npm run db:backup
 ```
 
-The helper creates a timestamped SQLite backup in the same database directory and verifies the backup file and integrity check. It never overwrites the source database.
+The helper creates a timestamped SQLite backup in the same database directory and verifies backup integrity. It never overwrites the source database.
 
 ## 7. Start the application in production mode
 
@@ -126,6 +129,6 @@ curl -f http://127.0.0.1:3000/health
 
 The health route should return a minimal successful payload and not leak secrets, filesystem paths, or raw SQL.
 
-## 10. Production launch remains deferred to MLT-010
+## 10. Production launch remains deferred to the real server operator
 
-This document prepares the repository for a safe future deployment. It does not perform the live DNS, hosting, or domain cutover. Final production launch remains the responsibility of MLT-010.
+This document prepares the repository for a future deployment. It does not perform the live DNS, hosting, or domain cutover. Final production launch remains the responsibility of the server administrator and the real hosting environment.

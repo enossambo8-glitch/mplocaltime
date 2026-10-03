@@ -1,32 +1,53 @@
-# mplocaltime
+# Mpumalanga Local Time
 
-## Deployment
+## Production runtime
 
-1. Create a local `.env` file from `.env.example` and add your values:
+The application is designed to run as a Node.js Express service with a local SQLite database. The repository-side production start command is:
 
 ```bash
-cp .env.example .env
-# then edit .env and set JWT_SECRET, INITIAL_PASSWORD, INITIAL_USER_PASSWORD and VERCEL_TOKEN
+npm start
 ```
 
-Important security note:
-- No production defaults are shipped in this repository.
-- `JWT_SECRET`, `INITIAL_PASSWORD`, and `INITIAL_USER_PASSWORD` must be set explicitly in the environment before the app starts.
-- Do not use predictable demo credentials in production or leave them in committed files.
-- Seed/demo accounts are for local testing only and are not a substitute for production secrets.
-
-2. Initialize or upgrade the local/production database schema:
+Run it with a production environment, for example:
 
 ```bash
+NODE_ENV=production \
+PORT=3000 \
+HOST=0.0.0.0 \
+DATABASE_PATH=/home/<user>/data/mplocaltime.db \
+SITE_URL=https://www.example.com \
+JWT_SECRET='<secure-random-secret>' \
+INITIAL_PASSWORD='<secure-admin-password>' \
+INITIAL_USER_PASSWORD='<secure-reporter-password>' \
+ADSENSE_ENABLED=false \
+npm start
+```
+
+## Required setup
+
+1. Copy `.env.example` to `.env` and fill in production values.
+2. Keep the database file outside a publicly served web root.
+3. Keep uploads and backup directories outside disposable deployment folders.
+4. Set `JWT_SECRET`, `INITIAL_PASSWORD`, and `INITIAL_USER_PASSWORD` explicitly.
+5. Leave `ADSENSE_ENABLED=false` until a valid approved Google publisher configuration exists.
+
+## Repository commands
+
+```bash
+npm ci
 npm run db:migrate
 npm run db:status
+npm run production:check
+npm test -- --test-reporter=spec
 ```
 
-3. Deploy to Vercel:
+## Production deployment guidance
 
-```bash
-cd /workspaces/mplocaltime
-npx vercel --prod --yes
-```
+Use the deployment documentation in [DEPLOYMENT.md](./DEPLOYMENT.md) for the full cPanel/SSH rollout procedure, environment file layout, migration order, database backup guidance, and rollback path.
 
-If you prefer interactive login instead of a token, run `npx vercel login` first.
+## Security notes
+
+- No real production secrets should be committed.
+- `.env` must remain untracked.
+- `SITE_URL` must be the trusted production domain, not a request Host header.
+- AdSense remains inactive by default; activation requires a legitimate Google publisher setup.
