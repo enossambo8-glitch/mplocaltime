@@ -37,7 +37,21 @@ const NEWS_SITEMAP_WINDOW_HOURS = 48;
 // Reasonable cap so the RSS feed never dumps the entire stories table.
 const RSS_FEED_LIMIT = 50;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'testsecret';
+function getJwtSecret() {
+  const configured = String(process.env.JWT_SECRET || '').trim();
+  if (process.env.NODE_ENV === 'production') {
+    if (!configured || ['changeme', 'secret', 'development', 'testsecret', 'default'].includes(configured.toLowerCase())) {
+      throw new Error('JWT_SECRET must be set to a secure value in production.');
+    }
+    return configured;
+  }
+  if (configured) {
+    return configured;
+  }
+  return process.env.NODE_ENV === 'test' ? 'testsecret' : 'development-secret-change-me';
+}
+
+const JWT_SECRET = getJwtSecret();
 
 const INITIAL_PASSWORD = process.env.INITIAL_PASSWORD || '';
 const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
@@ -432,11 +446,30 @@ async function ensureMediaColumns(db) {
   }
 }
 
+
+const SCHEMA_MIGRATION_NAME = 'mlt_core_schema_v1';
+
+async function ensureSchemaMigrationsTable(db) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
 async function initializeDatabase() {
   return queueDatabaseOperation(async () => {
     const db = await init();
     try {
-      await db.exec(`
+      await ensureSchemaMigrationsTable(db);
+      const migrationExists = await db.get('SELECT 1 FROM schema_migrations WHERE name = ?', [SCHEMA_MIGRATION_NAME]);
+
+      if (!migrationExists) {
+        await db.exec('BEGIN IMMEDIATE');
+        try {
+          await db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -928,17 +961,8 @@ async function initializeDatabase() {
     if (!storyColumnNames.includes('archived_at')) {
       await db.run('ALTER TABLE stories ADD COLUMN archived_at TEXT');
     }
-    if (!storyColumnNames.includes('published_at')) {
-      await db.run('ALTER TABLE stories ADD COLUMN published_at TEXT');
-    }
-    if (!storyColumnNames.includes('archived_at')) {
-      await db.run('ALTER TABLE stories ADD COLUMN archived_at TEXT');
-    }
     if (!storyColumnNames.includes('editorial_notes')) {
       await db.run('ALTER TABLE stories ADD COLUMN editorial_notes TEXT');
-    }
-    if (!storyColumnNames.includes('updatedAt')) {
-      await db.run('ALTER TABLE stories ADD COLUMN updatedAt TEXT');
     }
     if (!storyColumnNames.includes('slug')) {
       await db.run('ALTER TABLE stories ADD COLUMN slug TEXT');
@@ -971,6 +995,15 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE stories ADD COLUMN town_id INTEGER');
     }
     for (const [column, definition] of [
+      ['content', 'TEXT'],
+      ['author_id', 'INTEGER'],
+      ['views', 'INTEGER DEFAULT 0'],
+      ['featured', 'INTEGER DEFAULT 0'],
+      ['featured_image', 'TEXT'],
+      ['excerpt', 'TEXT'],
+      ['reading_time', 'INTEGER DEFAULT 5'],
+      ['submittedAt', 'TEXT'],
+      ['updatedAt', 'TEXT'],
       ['subheadline', 'TEXT'],
       ['image_alt', 'TEXT'],
       ['image_caption', 'TEXT'],
@@ -1090,7 +1123,7 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
     }
 
-    const isTestRun = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'));
+    const isTestRun = process.env.NODE_ENV === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'));
     if (isTestRun && !hasResetTestDatabase) {
       await db.exec(`
         DELETE FROM comments;
@@ -1347,14 +1380,29 @@ async function initializeDatabase() {
       const generatedSlug = await makeUniqueStorySlug(db, null, storyMissingSlug.title, storyMissingSlug.id);
       await db.run(`UPDATE stories SET slug = ? WHERE id = ?`, [generatedSlug, storyMissingSlug.id]);
     }
+
+          await db.run('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)', [SCHEMA_MIGRATION_NAME, new Date().toISOString()]);
+          await db.exec('COMMIT');
+        } catch (error) {
+          await db.exec('ROLLBACK');
+          throw error;
+        }
+      }
     } finally {
-      await db.close();
+      const isTestRun = process.env.NODE_ENV === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'));
+      if (!isTestRun) {
+        await db.close();
+      }
     }
   });
 }
 
 const SECRET = JWT_SECRET;
+const PORT = Number.parseInt(process.env.PORT || '3000', 10) || 3000;
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
+const TRUST_PROXY = Number.parseInt(process.env.TRUST_PROXY || '0', 10);
 const app = express();
+app.set('trust proxy', Number.isFinite(TRUST_PROXY) ? TRUST_PROXY : 0);
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 const mediaUploadsDir = path.resolve(MEDIA_UPLOAD_ROOT);
 if (!fs.existsSync(uploadsDir)) {
@@ -1458,6 +1506,20 @@ app.use((req, res, next) => {
     return originalSend(body, ...args);
   };
   next();
+});
+
+app.get('/health', async (req, res) => {
+  try {
+    const db = await init();
+    try {
+      await db.get('SELECT 1 AS ok');
+      res.json({ status: 'ok', node_env: process.env.NODE_ENV || 'development' });
+    } finally {
+      await db.close();
+    }
+  } catch (error) {
+    res.status(503).json({ status: 'error', error: 'database_unavailable' });
+  }
 });
 
 // Serve index.html for root
@@ -5336,8 +5398,6 @@ app.get('/api/category/:category', async (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-
 if (require.main === module) {
   const shouldProcessScheduledStories = process.argv.includes('--process-scheduled-stories');
   if (shouldProcessScheduledStories) {
@@ -5359,7 +5419,7 @@ if (require.main === module) {
   }
 
   initializeDatabase()
-    .then(() => app.listen(PORT, () => console.log(`API listening on ${PORT}`)))
+    .then(() => app.listen(PORT, HOST, () => console.log(`API listening on ${HOST}:${PORT}`)))
     .catch((error) => {
       console.error('Database initialization failed:', error);
       process.exit(1);

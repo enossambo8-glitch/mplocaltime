@@ -17,6 +17,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "init-db": "node init_db.js",
+    "db:migrate": "node init_db.js",
+    "db:status": "node scripts/db-status.js",
+    "db:backup": "node scripts/db-backup.js",
     "test": "NODE_ENV=test node --test --test-concurrency=1 tests/**/*.test.js"
   },
   "dependencies": {

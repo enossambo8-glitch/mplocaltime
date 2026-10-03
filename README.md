@@ -15,7 +15,14 @@ Important security note:
 - Do not use predictable demo credentials in production or leave them in committed files.
 - Seed/demo accounts are for local testing only and are not a substitute for production secrets.
 
-2. Deploy to Vercel:
+2. Initialize or upgrade the local/production database schema:
+
+```bash
+npm run db:migrate
+npm run db:status
+```
+
+3. Deploy to Vercel:
 
 ```bash
 cd /workspaces/mplocaltime

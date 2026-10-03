@@ -1,6 +1,20 @@
+const fs = require('fs');
+const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 
-const DATABASE_PATH = process.env.DB_PATH || './data.db';
+function resolveDatabasePath() {
+  const configured = process.env.DATABASE_PATH || process.env.DB_PATH || path.join(__dirname, 'data.db');
+  const absolute = path.isAbsolute(configured) ? configured : path.resolve(__dirname, configured);
+  return absolute;
+}
+
+function ensureDatabaseDirectory(databasePath) {
+  const directory = path.dirname(databasePath);
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+}
+
 let testMemoryDb = null;
 let operationQueue = Promise.resolve();
 
@@ -26,7 +40,8 @@ function wrap(db, { keepAliveOnClose = false } = {}) {
 }
 
 async function init() {
-  const isTestRun = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'));
+  const hasExplicitDatabasePath = Boolean(process.env.DATABASE_PATH || process.env.DB_PATH);
+  const isTestRun = (process.env.NODE_ENV === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'))) && !hasExplicitDatabasePath;
   if (isTestRun) {
     if (!testMemoryDb) {
       const raw = new sqlite3.Database(':memory:');
@@ -35,10 +50,15 @@ async function init() {
     }
     return testMemoryDb;
   }
-  const raw = new sqlite3.Database(DATABASE_PATH);
+
+  const databasePath = resolveDatabasePath();
+  ensureDatabaseDirectory(databasePath);
+  const raw = new sqlite3.Database(databasePath);
   const db = wrap(raw);
   await db.exec('PRAGMA foreign_keys = ON;');
+  await db.exec('PRAGMA journal_mode = WAL;');
+  await db.exec('PRAGMA busy_timeout = 5000;');
   return db;
 }
 
-module.exports = { init, DATABASE_PATH, queueDatabaseOperation };
+module.exports = { init, resolveDatabasePath, DATABASE_PATH: resolveDatabasePath(), queueDatabaseOperation };
