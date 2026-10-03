@@ -16,6 +16,7 @@
   <script defer src="/main.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="reading-progress" aria-hidden="true"></div>
   <header class="site-header">
     <div class="container navbar">
@@ -44,7 +45,7 @@
     </div>
   </header>
 
-  <main class="container" style="padding: 40px 0;">
+  <main id="main-content" class="container" style="padding: 40px 0;">
     <section class="card" style="max-width:560px;margin:0 auto;">
       <div class="card-content">
         <h1 class="section-title">Contributor login</h1>
@@ -52,15 +53,15 @@
         <form id="loginForm" style="display:grid;gap:18px;">
           <label>
             <span>Username</span>
-            <input id="loginUsername" name="username" type="text" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;">
+            <input id="loginUsername" name="username" type="text" autocomplete="username" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;">
           </label>
           <label>
             <span>Password</span>
-            <input id="loginPassword" name="password" type="password" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;">
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;">
           </label>
           <button class="btn primary" type="submit">Login</button>
         </form>
-        <div id="loginMessage" class="meta" style="margin-top:16px;color:#a00;"></div>
+        <div id="loginMessage" class="meta" role="status" aria-live="polite" style="margin-top:16px;color:#a00;"></div>
         <p style="margin-top:18px;color:var(--muted);">If you are a contributor, use the API login to access your dashboard from the editor tools.</p>
       </div>
     </section>

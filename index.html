@@ -134,19 +134,22 @@
               </label>
               <button class="btn primary" type="submit">Save preferences</button>
             </form>
-            <p id="pushPrefsMessage" class="meta"></p>
+            <p id="pushPrefsMessage" class="meta" role="status" aria-live="polite"></p>
           </div>
         </article>
         <article class="card" aria-label="Newsletter signup">
           <div class="card-content">
             <h3>Newsletter</h3>
             <form id="newsletterForm" style="display:grid; gap:10px;">
-              <input id="newsletterName" name="name" placeholder="Name" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
-              <input id="newsletterSurname" name="surname" placeholder="Surname" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
-              <input id="newsletterEmail" name="email" type="email" placeholder="Email address" required style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <label class="visually-hidden" for="newsletterName">Name</label>
+              <input id="newsletterName" name="name" placeholder="Name" autocomplete="given-name" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <label class="visually-hidden" for="newsletterSurname">Surname</label>
+              <input id="newsletterSurname" name="surname" placeholder="Surname" autocomplete="family-name" style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
+              <label class="visually-hidden" for="newsletterEmail">Email address</label>
+              <input id="newsletterEmail" name="email" type="email" placeholder="Email address" autocomplete="email" required style="width:100%;padding:10px 12px;border:1px solid #dfe3e8;border-radius:12px;" />
               <button class="btn primary" type="submit">Subscribe</button>
             </form>
-            <p id="newsletterMessage" class="meta"></p>
+            <p id="newsletterMessage" class="meta" role="status" aria-live="polite"></p>
           </div>
         </article>
       </div>

@@ -19,10 +19,36 @@ const app = (() => {
   const initMenu = () => {
     const button = utils.qs('.nav-toggle');
     const nav = utils.qs('.nav-primary');
+    if (!button || !nav) return;
+
+    const setOpen = (open) => {
+      button.setAttribute('aria-expanded', String(open));
+      nav.classList.toggle('nav-open', open);
+    };
+
     utils.on(button, 'click', () => {
       const expanded = button.getAttribute('aria-expanded') === 'true';
-      button.setAttribute('aria-expanded', String(!expanded));
-      nav.classList.toggle('nav-open');
+      setOpen(!expanded);
+    });
+
+    // Close the mobile menu with Escape and return focus to the trigger,
+    // so keyboard users are never left stranded inside a hidden menu.
+    utils.on(document, 'keydown', (event) => {
+      if (event.key === 'Escape' && button.getAttribute('aria-expanded') === 'true') {
+        setOpen(false);
+        button.focus();
+      }
+    });
+
+    // Close the menu once a navigation link is activated, and when a click
+    // happens outside of the nav/menu trigger entirely.
+    utils.on(nav, 'click', (event) => {
+      if (event.target.closest('a')) setOpen(false);
+    });
+    utils.on(document, 'click', (event) => {
+      if (button.getAttribute('aria-expanded') !== 'true') return;
+      if (nav.contains(event.target) || button.contains(event.target)) return;
+      setOpen(false);
     });
   };
 
@@ -520,7 +546,12 @@ const app = (() => {
         index = Number(button.dataset.index);
         render();
       }));
-      setInterval(() => onNav(1), 7000);
+      // Respect the user's reduced-motion preference by never auto-advancing;
+      // the prev/next buttons and dots remain fully usable either way.
+      const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!prefersReducedMotion) {
+        setInterval(() => onNav(1), 7000);
+      }
       return slides.map(slide => slide.id);
     } catch (error) {
       console.error('Error loading hero slider:', error);

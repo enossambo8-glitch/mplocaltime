@@ -4437,7 +4437,7 @@ app.get('/story/:id', async (req, res) => {
       <div class="single-related-posts">
         <div class="related-posts-thumbnail">
           <a href="/story/${item.slug || item.id}">
-            <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" />
+            <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" loading="lazy" decoding="async" />
           </a>
         </div>
         <div class="cm-post-content">
@@ -4453,7 +4453,7 @@ app.get('/story/:id', async (req, res) => {
       ? contributorStories.map((item) => `
         <div class="single-related-posts">
           <div class="related-posts-thumbnail">
-            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" loading="lazy" decoding="async" /></a>
           </div>
           <div class="cm-post-content">
             <h3 class="cm-entry-title"><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></h3>
@@ -4468,7 +4468,7 @@ app.get('/story/:id', async (req, res) => {
       ? municipalityStories.map((item) => `
         <div class="single-related-posts">
           <div class="related-posts-thumbnail">
-            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" /></a>
+            <a href="/story/${item.slug || item.id}"><img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" loading="lazy" decoding="async" /></a>
           </div>
           <div class="cm-post-content">
             <h3 class="cm-entry-title"><a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a></h3>
@@ -4614,11 +4614,11 @@ app.get('/story/:id', async (req, res) => {
           </div>
         </div>
         <div class="cm-header-bottom-row">
-          <div class="cm-container"><nav id="cm-primary-nav" class="cm-primary-nav"><ul id="cm-primary-menu"><li><a href="/">Home</a></li><li><a href="/news.html">News</a></li><li><a href="/business.html">Business</a></li><li><a href="/arts.html">Arts</a></li><li><a href="/sports.html">Sports</a></li><li><a href="/community.html">Community</a></li></ul></nav></div>
+          <div class="cm-container"><nav id="cm-primary-nav" class="cm-primary-nav" aria-label="Primary navigation"><ul id="cm-primary-menu"><li><a href="/">Home</a></li><li><a href="/news.html">News</a></li><li><a href="/business.html">Business</a></li><li><a href="/arts.html">Arts</a></li><li><a href="/sports.html">Sports</a></li><li><a href="/community.html">Community</a></li></ul></nav></div>
         </div>
       </div>
     </header>
-    <div id="cm-content" class="cm-content">
+    <main id="main" class="cm-content">
       <div class="cm-container">
         <div class="cm-row">
           <div id="cm-primary" class="cm-primary">
@@ -4626,7 +4626,7 @@ app.get('/story/:id', async (req, res) => {
               <article id="post-${s.id}" class="post-${s.id} post type-post status-publish format-standard has-post-thumbnail hentry category-${escapeHtml((s.category||'news').toLowerCase())}">
                 <div class="cm-post-content">
                   <figure class="cm-featured-image">
-                    <img src="${escapeHtml(image)}" alt="${escapeHtml(imageAlt)}" style="width:100%;height:auto;border-radius:12px;" />
+                    <img src="${escapeHtml(image)}" alt="${escapeHtml(imageAlt)}" decoding="async" style="width:100%;height:auto;border-radius:12px;" />
                     ${imageCaptionHtml}
                   </figure>
                   <header class="cm-entry-header">
@@ -4677,7 +4677,7 @@ app.get('/story/:id', async (req, res) => {
                   <h4>Trending stories</h4>
                   ${trending.map((item) => `
                     <div class="widget-item">
-                      <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" />
+                      <img src="${escapeHtml(item.featured_image || '/logo.png')}" alt="${escapeHtml(item.title)}" loading="lazy" decoding="async" />
                       <div class="widget-item-content">
                         <a href="/story/${item.slug || item.id}">${escapeHtml(item.title)}</a>
                         <time datetime="${escapeAttr(item.submittedAt || '')}">${escapeHtml(item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('en-ZA', { month:'short', day:'numeric' }) : '')}</time>
@@ -4689,7 +4689,8 @@ app.get('/story/:id', async (req, res) => {
                   <h4>Newsletter</h4>
                   <p>Subscribe to our newsletter for the latest Mpumalanga stories and updates.</p>
                   <form class="newsletter-form" action="#" method="post" onsubmit="event.preventDefault(); alert('Newsletter signup is coming soon.');">
-                    <input type="email" placeholder="Your email address" required />
+                    <label class="visually-hidden" for="articleNewsletterEmail">Email address</label>
+                    <input id="articleNewsletterEmail" type="email" placeholder="Your email address" autocomplete="email" required />
                     <button type="submit">Subscribe</button>
                   </form>
                 </div>
@@ -4698,7 +4699,7 @@ app.get('/story/:id', async (req, res) => {
           </div>
         </div>
       </div>
-    </div>
+    </main>
     <footer id="cm-footer" class="cm-footer cm-footer-builder">
       <div class="cm-row cm-footer-desktop-row">
         <div class="cm-footer-main-row"><div class="cm-container"><div class="cm-main-row"><div class="cm-footer-col cm-footer-main-1-col"><nav id="cm-footer-nav" class="cm-footer-nav"><ul id="cm-footer-menu" class="cm-footer-menu"><li><a href="/">Home</a></li><li><a href="/about.html">About Us</a></li><li><a href="/privacy-policy.html">Privacy Policy</a></li><li><a href="/terms-and-conditions.html">Terms & Conditions</a></li><li><a href="/contact.html">Contact</a></li></ul></nav></div></div></div></div>

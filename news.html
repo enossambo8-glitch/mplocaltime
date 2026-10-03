@@ -19,6 +19,7 @@
   <script defer src="/main.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="reading-progress" aria-hidden="true"></div>
   <header class="site-header">
     <div class="container navbar">
@@ -47,7 +48,7 @@
     </div>
   </header>
 
-  <main class="container">
+  <main id="main-content" class="container">
     <section class="hero-banner">
       <p class="story-badge">Breaking news</p>
       <h1>Stay informed with the most important local stories.</h1>
@@ -63,7 +64,7 @@
 
     <div class="grid article-grid" id="latestNewsGrid" data-latest-news>
       <article class="card" data-search="government service delivery potholes road repairs">
-        <img src="/logo.png" alt="Local road repair project in Mpumalanga">
+        <img src="/logo.png" alt="Local road repair project in Mpumalanga" loading="lazy" decoding="async">
         <div class="card-content">
           <div class="category-pill">News</div>
           <h3 class="card-title">Province accelerates road repairs after community reporting</h3>
@@ -72,7 +73,7 @@
         </div>
       </article>
       <article class="card" data-search="market food price inflation local traders">
-        <img src="/logo.png" alt="Local market scene in Mpumalanga">
+        <img src="/logo.png" alt="Local market scene in Mpumalanga" loading="lazy" decoding="async">
         <div class="card-content">
           <div class="category-pill">Business</div>
           <h3 class="card-title">Local markets adapt to rising food and transport costs</h3>
@@ -81,7 +82,7 @@
         </div>
       </article>
       <article class="card" data-search="club win school sport tournament finals">
-        <img src="/logo.png" alt="Local sport club celebration">
+        <img src="/logo.png" alt="Local sport club celebration" loading="lazy" decoding="async">
         <div class="card-content">
           <div class="category-pill">Sports</div>
           <h3 class="card-title">School sports season kicks off with new provincial fixtures</h3>

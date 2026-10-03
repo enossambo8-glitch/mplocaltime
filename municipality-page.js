@@ -394,6 +394,8 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
     * { box-sizing:border-box; }
     body { margin:0; font-family: Inter, Arial, sans-serif; background:var(--bg); color:var(--ink); line-height:1.6; }
     a { color:inherit; }
+    .skip-link { position:absolute; left:-999px; top:0; background:var(--accent); color:#fff; padding:12px 16px; z-index:2000; }
+    .skip-link:focus { left:16px; top:16px; }
     .page { max-width:1280px; margin:0 auto; padding:0 18px 40px; }
     .topbar { background:#111827; color:#fff; padding:10px 0; font-size:.95rem; }
     .topbar .inner { max-width:1280px; margin:0 auto; padding:0 18px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
@@ -439,9 +441,10 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
   ${jsonLdScript(placeJsonLd)}
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="topbar"><div class="inner"><span>Mpumalanga Local Time • Independent local reporting</span><span>Updated ${escapeHtml(new Date(municipality.latestUpdate).toLocaleDateString('en-ZA', { day:'numeric', month:'short', year:'numeric' }))}</span></div></div>
-  <nav class="nav"><div class="inner"><a href="/" class="brand">MPUMALANGA LOCAL TIME</a><div class="nav-links"><a href="/">Home</a><a href="/municipalities">Municipalities</a><a href="/news.html">News</a><a href="/business.html">Business</a><a href="/contact.html">Contact</a></div></div></nav>
-  <main class="page">
+  <nav class="nav" aria-label="Primary navigation"><div class="inner"><a href="/" class="brand">MPUMALANGA LOCAL TIME</a><div class="nav-links"><a href="/">Home</a><a href="/municipalities">Municipalities</a><a href="/news.html">News</a><a href="/business.html">Business</a><a href="/contact.html">Contact</a></div></div></nav>
+  <main id="main-content" class="page">
     <div class="breadcrumb">Home &gt; Municipalities &gt; ${escapeHtml(municipality.name)}</div>
     <section class="hero" aria-label="Municipality hero">
       <img src="${escapeAttr(municipality.heroImage)}" alt="${escapeHtml(municipality.name)} municipality skyline" />
@@ -489,7 +492,7 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
           <div class="news-list">
             ${latest.length ? latest.map((article) => `
               <article class="news-item">
-                <img src="${escapeAttr(article.image || municipality.heroImage)}" alt="${escapeHtml(article.title)}" />
+                <img src="${escapeAttr(article.image || municipality.heroImage)}" alt="${escapeHtml(article.title)}" loading="lazy" decoding="async" />
                 <div>
                   <div class="pill">${escapeHtml(article.category || 'News')}</div>
                   <h3 style="margin:8px 0 6px; font-size:1rem;">${escapeHtml(article.title)}</h3>
@@ -560,9 +563,9 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
     <div class="card" style="margin-top:24px;">
       <h2 style="margin-top:0;">Photo gallery</h2>
       <div class="gallery">
-        <img src="${escapeAttr(municipality.heroImage)}" alt="${escapeHtml(municipality.name)} gallery image" />
-        <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=80" alt="Community event in ${escapeHtml(municipality.name)}" />
-        <img src="https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=900&q=80" alt="Local market in ${escapeHtml(municipality.name)}" />
+        <img src="${escapeAttr(municipality.heroImage)}" alt="${escapeHtml(municipality.name)} gallery image" loading="lazy" decoding="async" />
+        <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=900&q=80" alt="Community event in ${escapeHtml(municipality.name)}" loading="lazy" decoding="async" />
+        <img src="https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=900&q=80" alt="Local market in ${escapeHtml(municipality.name)}" loading="lazy" decoding="async" />
       </div>
       <p class="muted" style="margin-top:10px;">Photo credits: Mpumalanga Local Time newsroom</p>
     </div>
@@ -640,10 +643,11 @@ function buildMunicipalityListHtml(req) {
   <meta property="og:description" content="Browse dedicated municipality pages for Mpumalanga news, governance and community reporting." />
   <meta property="og:url" content="${escapeAttr(buildUrl('/municipalities'))}" />
   <link rel="alternate" type="application/rss+xml" title="Mpumalanga Local Time RSS" href="${escapeAttr(buildUrl('/rss.xml'))}" />
-  <style>body{font-family:Inter,Arial,sans-serif;margin:0;padding:0;background:#f8fafc;color:#111827;} main{max-width:960px;margin:0 auto;padding:24px 18px 48px;} .card{background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:20px;box-shadow:0 15px 40px rgba(15,23,42,.04);} ul{list-style:none;padding:0;margin:0;} a{color:#c62828;text-decoration:none;} h1{margin-top:0;}</style>
+  <style>body{font-family:Inter,Arial,sans-serif;margin:0;padding:0;background:#f8fafc;color:#111827;} main{max-width:960px;margin:0 auto;padding:24px 18px 48px;} .card{background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:20px;box-shadow:0 15px 40px rgba(15,23,42,.04);} ul{list-style:none;padding:0;margin:0;} a{color:#c62828;text-decoration:none;} h1{margin-top:0;} .skip-link{position:absolute;left:-999px;top:0;background:#c62828;color:#fff;padding:12px 16px;z-index:2000;} .skip-link:focus{left:16px;top:16px;}</style>
 </head>
 <body>
-  <main>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <main id="main-content">
     <div class="card">
       <h1>Municipalities</h1>
       <p>Browse dedicated municipality news pages built for local SEO, community visibility and fast delivery.</p>
