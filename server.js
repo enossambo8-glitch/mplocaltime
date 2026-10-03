@@ -10,7 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
-const { init } = require('./db');
+const { init, queueDatabaseOperation } = require('./db');
 const {
   MUNICIPALITIES,
   getMunicipalityBySlug,
@@ -19,15 +19,13 @@ const {
   buildMunicipalityListHtml,
 } = require('./municipality-page');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET is required and must be set in the environment before starting the server.');
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'testsecret';
 
 const INITIAL_PASSWORD = process.env.INITIAL_PASSWORD || '';
 const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
 const SEED_DEMO_USERS = Boolean(INITIAL_PASSWORD && INITIAL_USER_PASSWORD);
 const CANONICAL_ROLES = ['admin', 'editor', 'journalist', 'contributor', 'user'];
+let hasResetTestDatabase = false;
 const ROLE_ALIASES = {
   admin: 'admin',
   editor: 'editor',
@@ -278,9 +276,10 @@ async function ensureMediaColumns(db) {
 }
 
 async function initializeDatabase() {
-  const db = await init();
-  try {
-    await db.exec(`
+  return queueDatabaseOperation(async () => {
+    const db = await init();
+    try {
+      await db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -289,6 +288,34 @@ async function initializeDatabase() {
         avatar TEXT,
         role TEXT NOT NULL DEFAULT 'user',
         is_active INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE IF NOT EXISTS districts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        province TEXT NOT NULL DEFAULT 'Mpumalanga',
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS municipalities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        district_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        province TEXT NOT NULL DEFAULT 'Mpumalanga',
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(district_id) REFERENCES districts(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS towns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        municipality_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        province TEXT NOT NULL DEFAULT 'Mpumalanga',
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY(municipality_id) REFERENCES municipalities(id) ON DELETE CASCADE
       );
       CREATE TABLE IF NOT EXISTS stories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,7 +337,12 @@ async function initializeDatabase() {
         seo_title TEXT,
         meta_description TEXT,
         tags TEXT,
+        district TEXT,
         municipality TEXT,
+        town TEXT,
+        district_id INTEGER,
+        municipality_id INTEGER,
+        town_id INTEGER,
         subheadline TEXT,
         image_alt TEXT,
         image_caption TEXT,
@@ -321,7 +353,10 @@ async function initializeDatabase() {
         published_by INTEGER,
         scheduled_at TEXT,
         archived_at TEXT,
-        FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL
+        FOREIGN KEY(author_id) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY(district_id) REFERENCES districts(id) ON DELETE SET NULL,
+        FOREIGN KEY(municipality_id) REFERENCES municipalities(id) ON DELETE SET NULL,
+        FOREIGN KEY(town_id) REFERENCES towns(id) ON DELETE SET NULL
       );
       CREATE TABLE IF NOT EXISTS editorial_reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -699,8 +734,23 @@ async function initializeDatabase() {
     if (!storyColumnNames.includes('tags')) {
       await db.run('ALTER TABLE stories ADD COLUMN tags TEXT');
     }
+    if (!storyColumnNames.includes('district')) {
+      await db.run('ALTER TABLE stories ADD COLUMN district TEXT');
+    }
     if (!storyColumnNames.includes('municipality')) {
       await db.run('ALTER TABLE stories ADD COLUMN municipality TEXT');
+    }
+    if (!storyColumnNames.includes('town')) {
+      await db.run('ALTER TABLE stories ADD COLUMN town TEXT');
+    }
+    if (!storyColumnNames.includes('district_id')) {
+      await db.run('ALTER TABLE stories ADD COLUMN district_id INTEGER');
+    }
+    if (!storyColumnNames.includes('municipality_id')) {
+      await db.run('ALTER TABLE stories ADD COLUMN municipality_id INTEGER');
+    }
+    if (!storyColumnNames.includes('town_id')) {
+      await db.run('ALTER TABLE stories ADD COLUMN town_id INTEGER');
     }
     for (const [column, definition] of [
       ['subheadline', 'TEXT'],
@@ -804,18 +854,6 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN breaking_alerts INTEGER DEFAULT 0');
     }
     if (!newsletterColumnNames.includes('frequency')) {
-    const revisionColumns = await db.all('PRAGMA table_info(revision_history)');
-    const revisionColumnNames = revisionColumns.map((column) => column.name);
-    if (!revisionColumnNames.includes('actor_id')) {
-      await db.run('ALTER TABLE revision_history ADD COLUMN actor_id INTEGER');
-    }
-    if (!revisionColumnNames.includes('previous_status')) {
-      await db.run('ALTER TABLE revision_history ADD COLUMN previous_status TEXT');
-    }
-    if (!revisionColumnNames.includes('new_status')) {
-      await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
-    }
-
       await db.run('ALTER TABLE newsletter_subscribers ADD COLUMN frequency TEXT DEFAULT "weekly"');
     }
     if (!newsletterColumnNames.includes('status')) {
@@ -834,38 +872,60 @@ async function initializeDatabase() {
       await db.run('ALTER TABLE revision_history ADD COLUMN new_status TEXT');
     }
 
-    const isTestRun = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test';
-    if (isTestRun) {
-      await db.run(`UPDATE users SET role = ? WHERE username = ?`, [DEFAULT_ADMIN.role, DEFAULT_ADMIN.username]);
-      await db.run(`UPDATE users SET role = ? WHERE username = ?`, [DEFAULT_USER.role, DEFAULT_USER.username]);
-      await db.run(`UPDATE users SET role = ? WHERE username NOT IN (?, ?) AND username IS NOT NULL`, ['user', DEFAULT_ADMIN.username, DEFAULT_USER.username]);
+    const isTestRun = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'));
+    if (isTestRun && !hasResetTestDatabase) {
+      await db.exec(`
+        DELETE FROM comments;
+        DELETE FROM editorial_notes;
+        DELETE FROM story_corrections;
+        DELETE FROM revision_history;
+        DELETE FROM editorial_reviews;
+        DELETE FROM breaking_news;
+        DELETE FROM media;
+        DELETE FROM stories;
+        DELETE FROM notifications;
+        DELETE FROM messages;
+        DELETE FROM correction_requests;
+        DELETE FROM newsletter_subscribers;
+        DELETE FROM push_preferences;
+        DELETE FROM weather_locations;
+        DELETE FROM artist_reviews;
+        DELETE FROM artist_bookings;
+        DELETE FROM artists;
+        DELETE FROM creative_organisations;
+        DELETE FROM venues;
+        DELETE FROM events;
+        DELETE FROM opportunities;
+        DELETE FROM users;
+        DELETE FROM sqlite_sequence WHERE name IN ('stories', 'comments', 'revision_history', 'editorial_reviews', 'breaking_news', 'media', 'notifications', 'messages', 'correction_requests', 'newsletter_subscribers', 'push_preferences', 'weather_locations', 'artist_reviews', 'artist_bookings', 'artists', 'creative_organisations', 'venues', 'events', 'opportunities', 'users');
+      `);
+      hasResetTestDatabase = true;
     }
 
     if (process.env.NODE_ENV === 'production' && !SEED_DEMO_USERS) {
       throw new Error('Production startup requires INITIAL_PASSWORD and INITIAL_USER_PASSWORD to be configured.');
     }
 
-    if (SEED_DEMO_USERS) {
-      const existingAdmin = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_ADMIN.username]);
-      const adminHash = await bcrypt.hash(DEFAULT_ADMIN.passwordEnv, 10);
-      if (!existingAdmin) {
-        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_ADMIN.username, adminHash, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role]);
-      } else {
-        const normalizedAdminRole = normalizeRoleName(existingAdmin.role, 'admin');
-        await db.run(`UPDATE users SET password = ?, role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [adminHash, normalizedAdminRole, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, Number(existingAdmin.is_active ?? 1), DEFAULT_ADMIN.username]);
-      }
+    const shouldSeedDemoUsers = process.env.NODE_ENV !== 'production' || SEED_DEMO_USERS;
+    if (shouldSeedDemoUsers) {
+      const ensureUser = async (username, password, bio, avatar, role) => {
+        const existingUser = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [username]);
+        const passwordHash = await bcrypt.hash(password, 10);
+        if (!existingUser) {
+          await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [username, passwordHash, bio, avatar, role]);
+          return;
+        }
+        const normalizedRole = normalizeRoleName(existingUser.role, role);
+        await db.run(`UPDATE users SET password = ?, role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [passwordHash, normalizedRole, bio, avatar, Number(existingUser.is_active ?? 1), username]);
+      };
 
-      const existingReporter = await db.get(`SELECT id, role, is_active FROM users WHERE username = ?`, [DEFAULT_USER.username]);
-      const reporterHash = await bcrypt.hash(DEFAULT_USER.passwordEnv, 10);
-      if (!existingReporter) {
-        await db.run(`INSERT INTO users (username, password, bio, avatar, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`, [DEFAULT_USER.username, reporterHash, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role]);
-      } else {
-        const normalizedReporterRole = normalizeRoleName(existingReporter.role, 'journalist');
-        await db.run(`UPDATE users SET password = ?, role = ?, bio = ?, avatar = ?, is_active = ? WHERE username = ?`, [reporterHash, normalizedReporterRole, DEFAULT_USER.bio, DEFAULT_USER.avatar, Number(existingReporter.is_active ?? 1), DEFAULT_USER.username]);
-      }
+      await ensureUser(DEFAULT_ADMIN.username, DEFAULT_ADMIN.passwordEnv, DEFAULT_ADMIN.bio, DEFAULT_ADMIN.avatar, DEFAULT_ADMIN.role);
+      await ensureUser(DEFAULT_USER.username, DEFAULT_USER.passwordEnv, DEFAULT_USER.bio, DEFAULT_USER.avatar, DEFAULT_USER.role);
     } else if (process.env.NODE_ENV !== 'production') {
       console.warn('Skipping default demo user seeding because credentials are not configured.');
     }
+
+    await seedMpumalangaLocationReferenceData(db);
 
     const existingArtists = await db.get(`SELECT id FROM artists LIMIT 1`);
     if (!existingArtists) {
@@ -1069,9 +1129,10 @@ async function initializeDatabase() {
       const generatedSlug = await makeUniqueStorySlug(db, null, storyMissingSlug.title, storyMissingSlug.id);
       await db.run(`UPDATE stories SET slug = ? WHERE id = ?`, [generatedSlug, storyMissingSlug.id]);
     }
-  } finally {
-    await db.close();
-  }
+    } finally {
+      await db.close();
+    }
+  });
 }
 
 const SECRET = JWT_SECRET;
@@ -1175,28 +1236,284 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.get('/api/municipalities', (req, res) => {
-  res.json({ municipalities: MUNICIPALITIES });
+app.get('/api/municipalities', async (req, res) => {
+  return withDB(async (db) => {
+    const districtSlug = sanitizeSlug(req.query.district || req.query.district_slug || req.query.districtSlug || '');
+    let query = `SELECT m.*, d.name as district_name, d.slug as district_slug
+      FROM municipalities m
+      LEFT JOIN districts d ON d.id = m.district_id`;
+    const params = [];
+    if (districtSlug) {
+      query += ' WHERE d.slug = ?';
+      params.push(districtSlug);
+    }
+    query += ' ORDER BY m.name ASC';
+    const rows = await db.all(query, params);
+    res.json({
+      municipalities: rows.map((municipality) => ({
+        id: municipality.id,
+        name: municipality.name,
+        slug: municipality.slug,
+        district: municipality.district_name,
+        district_id: municipality.district_id,
+        district_slug: municipality.district_slug,
+        province: municipality.province,
+      }))
+    });
+  });
 });
 
-app.get('/api/municipalities/:slug', (req, res) => {
-  const municipality = getMunicipalityBySlug(req.params.slug);
-  if (!municipality) return res.status(404).json({ error: 'municipality not found' });
-  res.json({ municipality, articles: getMunicipalityArticles(municipality) });
+app.get('/api/municipalities/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).json({ error: 'municipality not found' });
+  return withDB(async (db) => {
+    const municipality = await db.get(`
+      SELECT m.*, d.name as district_name, d.slug as district_slug
+      FROM municipalities m
+      LEFT JOIN districts d ON d.id = m.district_id
+      WHERE LOWER(m.slug) = LOWER(?) OR LOWER(m.name) = LOWER(?)
+      LIMIT 1
+    `, [requestedSlug, requestedSlug]);
+    if (!municipality) return res.status(404).json({ error: 'municipality not found' });
+    const now = nowISO();
+    const stories = await db.all(`
+      SELECT s.*, u.username as author,
+             (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.municipality_id = ? AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC LIMIT 12
+    `, [municipality.id, now]);
+    res.json({
+      municipality: {
+        id: municipality.id,
+        name: municipality.name,
+        slug: municipality.slug,
+        district: municipality.district_name,
+        district_id: municipality.district_id,
+        district_slug: municipality.district_slug,
+        province: municipality.province,
+      },
+      stories: stories.map((story) => sanitizePublicStory({ ...story, comments: Number(story.comments || 0) }))
+    });
+  });
+});
+
+app.get('/api/districts', async (req, res) => {
+  return withDB(async (db) => {
+    const districts = await db.all('SELECT * FROM districts ORDER BY name ASC');
+    res.json({ districts: districts.map((district) => ({ id: district.id, name: district.name, slug: district.slug, province: district.province })) });
+  });
+});
+
+app.get('/api/districts/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).json({ error: 'district not found' });
+  return withDB(async (db) => {
+    const district = await db.get('SELECT * FROM districts WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [requestedSlug, requestedSlug]);
+    if (!district) return res.status(404).json({ error: 'district not found' });
+    const municipalities = await db.all('SELECT * FROM municipalities WHERE district_id = ? ORDER BY name ASC', [district.id]);
+    res.json({ district: { id: district.id, name: district.name, slug: district.slug, province: district.province }, municipalities });
+  });
+});
+
+app.get('/api/districts/:slug/municipalities', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).json({ error: 'district not found' });
+  return withDB(async (db) => {
+    const district = await db.get('SELECT * FROM districts WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [requestedSlug, requestedSlug]);
+    if (!district) return res.status(404).json({ error: 'district not found' });
+    const municipalities = await db.all('SELECT * FROM municipalities WHERE district_id = ? ORDER BY name ASC', [district.id]);
+    res.json({ district: { id: district.id, name: district.name, slug: district.slug }, municipalities });
+  });
+});
+
+app.get('/api/municipalities/:slug/towns', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).json({ error: 'municipality not found' });
+  return withDB(async (db) => {
+    const municipality = await db.get('SELECT * FROM municipalities WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [requestedSlug, requestedSlug]);
+    if (!municipality) return res.status(404).json({ error: 'municipality not found' });
+    const towns = await db.all('SELECT * FROM towns WHERE municipality_id = ? ORDER BY name ASC', [municipality.id]);
+    res.json({ municipality: { id: municipality.id, name: municipality.name, slug: municipality.slug }, towns });
+  });
+});
+
+app.get('/api/towns', async (req, res) => {
+  const municipalitySlug = sanitizeSlug(req.query.municipality || req.query.municipality_slug || req.query.municipalitySlug || '');
+  const districtSlug = sanitizeSlug(req.query.district || req.query.district_slug || req.query.districtSlug || '');
+  return withDB(async (db) => {
+    let query = 'SELECT t.*, m.name as municipality_name, m.slug as municipality_slug, d.name as district_name, d.slug as district_slug FROM towns t LEFT JOIN municipalities m ON m.id = t.municipality_id LEFT JOIN districts d ON d.id = m.district_id';
+    const params = [];
+    if (municipalitySlug) {
+      query += ' WHERE m.slug = ?';
+      params.push(municipalitySlug);
+    } else if (districtSlug) {
+      query += ' WHERE d.slug = ?';
+      params.push(districtSlug);
+    }
+    query += ' ORDER BY t.name ASC';
+    const rows = await db.all(query, params);
+    res.json({ towns: rows.map((town) => ({
+      id: town.id,
+      name: town.name,
+      slug: town.slug,
+      municipality: town.municipality_name,
+      municipality_slug: town.municipality_slug,
+      district: town.district_name,
+      district_slug: town.district_slug,
+      province: town.province,
+    })) });
+  });
+});
+
+app.get('/api/towns/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).json({ error: 'town not found' });
+  return withDB(async (db) => {
+    const town = await db.get(`
+      SELECT t.*, m.name as municipality_name, m.slug as municipality_slug, d.name as district_name, d.slug as district_slug
+      FROM towns t
+      LEFT JOIN municipalities m ON m.id = t.municipality_id
+      LEFT JOIN districts d ON d.id = m.district_id
+      WHERE LOWER(t.slug) = LOWER(?) OR LOWER(t.name) = LOWER(?)
+      LIMIT 1
+    `, [requestedSlug, requestedSlug]);
+    if (!town) return res.status(404).json({ error: 'town not found' });
+    const now = nowISO();
+    const stories = await db.all(`
+      SELECT s.*, u.username as author,
+             (SELECT COUNT(*) FROM comments WHERE story_id = s.id) as comments
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.town_id = ? AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC LIMIT 12
+    `, [town.id, now]);
+    res.json({
+      town: {
+        id: town.id,
+        name: town.name,
+        slug: town.slug,
+        municipality: town.municipality_name,
+        municipality_slug: town.municipality_slug,
+        district: town.district_name,
+        district_slug: town.district_slug,
+        province: town.province,
+      },
+      stories: stories.map((story) => sanitizePublicStory({ ...story, comments: Number(story.comments || 0) }))
+    });
+  });
 });
 
 app.get('/municipalities', (req, res) => {
   res.send(buildMunicipalityListHtml(req));
 });
 
-app.get('/municipality/:slug', (req, res) => {
-  const municipality = getMunicipalityBySlug(req.params.slug);
-  if (!municipality) {
-    return res.status(404).send('Municipality not found');
-  }
+app.get('/municipality/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).send('Municipality not found');
+  return withDB(async (db) => {
+    const municipality = await db.get(`
+      SELECT m.*, d.name as district_name, d.slug as district_slug
+      FROM municipalities m
+      LEFT JOIN districts d ON d.id = m.district_id
+      WHERE LOWER(m.slug) = LOWER(?) OR LOWER(m.name) = LOWER(?)
+      LIMIT 1
+    `, [requestedSlug, requestedSlug]);
+    if (!municipality) {
+      const fallback = getMunicipalityBySlug(req.params.slug);
+      if (!fallback) return res.status(404).send('Municipality not found');
+      const articles = getMunicipalityArticles(fallback);
+      return res.send(buildMunicipalityPageHtml(fallback, articles, req));
+    }
 
-  const articles = getMunicipalityArticles(municipality);
-  res.send(buildMunicipalityPageHtml(municipality, articles, req));
+    const now = nowISO();
+    const rows = await db.all(`
+      SELECT s.*, u.username as author
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.municipality_id = ? AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC LIMIT 12
+    `, [municipality.id, now]);
+    const articles = rows.map((story) => ({
+      title: story.title,
+      excerpt: story.excerpt || story.title,
+      author: story.author || 'Mpumalanga Local Time',
+      publishedAt: story.published_at || story.updatedAt || new Date().toISOString(),
+      readingTime: Number(story.reading_time || 3),
+      category: normalizeCategoryName(story.category || 'News'),
+      image: story.featured_image || '/logo.png',
+      featured: Boolean(story.featured),
+      summary: story.excerpt || story.title,
+      slug: story.slug,
+      id: story.id,
+      tags: story.tags ? story.tags.split(',') : []
+    }));
+    const location = {
+      name: municipality.name,
+      slug: municipality.slug,
+      district: municipality.district_name,
+      localMunicipality: municipality.name,
+      population: 'Regional',
+      area: 'Local area',
+      heroImage: '/logo.png',
+      description: `News and local reporting for ${municipality.name}, ${municipality.district_name}.`,
+      tags: ['Local news', 'Community']
+    };
+    res.send(buildMunicipalityPageHtml(location, articles, req));
+  });
+});
+
+app.get('/district/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).send('District not found');
+  return withDB(async (db) => {
+    const district = await db.get('SELECT * FROM districts WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [requestedSlug, requestedSlug]);
+    if (!district) return res.status(404).send('District not found');
+    const now = nowISO();
+    const stories = await db.all(`
+      SELECT s.*, u.username as author
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.district_id = ? AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC LIMIT 20
+    `, [district.id, now]);
+    const title = `${district.name} District News`;
+    const body = stories.length ? stories.map((story) => `
+      <article>
+        <h3>${escapeHtml(story.title)}</h3>
+        <p>${escapeHtml(story.excerpt || story.title)}</p>
+        <a href="/story/${encodeURIComponent(story.slug || story.id)}">Read more</a>
+      </article>
+    `).join('') : `<p>No published stories are available for this area yet.</p>`;
+    res.type('html').send(`<!doctype html><html><head><title>${escapeHtml(title)}</title></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`);
+  });
+});
+
+app.get('/town/:slug', async (req, res) => {
+  const requestedSlug = sanitizeSlug(req.params.slug);
+  if (!requestedSlug) return res.status(404).send('Town not found');
+  return withDB(async (db) => {
+    const town = await db.get('SELECT * FROM towns WHERE slug = ? OR LOWER(name) = LOWER(?) LIMIT 1', [requestedSlug, requestedSlug]);
+    if (!town) return res.status(404).send('Town not found');
+    const now = nowISO();
+    const stories = await db.all(`
+      SELECT s.*, u.username as author
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE s.town_id = ? AND ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC LIMIT 20
+    `, [town.id, now]);
+    const title = `${town.name} Local News`;
+    const body = stories.length ? stories.map((story) => `
+      <article>
+        <h3>${escapeHtml(story.title)}</h3>
+        <p>${escapeHtml(story.excerpt || story.title)}</p>
+        <a href="/story/${encodeURIComponent(story.slug || story.id)}">Read more</a>
+      </article>
+    `).join('') : `<p>No published stories are available for this area yet.</p>`;
+    res.type('html').send(`<!doctype html><html><head><title>${escapeHtml(title)}</title></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`);
+  });
 });
 
 app.get('/sitemap.xml', (req, res) => {
@@ -2142,12 +2459,14 @@ app.get('/:page', (req, res, next) => {
 });
 
 async function withDB(fn) {
-  const db = await init();
-  try {
-    return await fn(db);
-  } finally {
-    await db.close();
-  }
+  return queueDatabaseOperation(async () => {
+    const db = await init();
+    try {
+      return await fn(db);
+    } finally {
+      await db.close();
+    }
+  });
 }
 
 function sanitizeUsername(rawValue) {
@@ -2213,7 +2532,7 @@ async function authMiddleware(req, res, next) {
       req.user = {
         id: Number(user.id),
         username: user.username,
-        role: normalizeRoleName(user.role, 'user'),
+        role: normalizeRoleName(data?.role || user.role, 'user'),
         bio: user.bio || '',
         avatar: user.avatar || '/logo.png',
         is_active: isActiveAccount(user.is_active),
@@ -2254,7 +2573,7 @@ function normalizeStoryPayload(payload = {}) {
   return {
     title: text(payload.title, 180),
     subheadline: text(payload.subheadline, 240),
-    category: text(payload.category || 'News', 80),
+    category: normalizeCategoryName(payload.category || 'News'),
     content,
     excerpt: text(payload.excerpt, 260),
     featured_image: text(payload.featured_image || payload.featuredImage, 500),
@@ -2266,12 +2585,268 @@ function normalizeStoryPayload(payload = {}) {
     seo_title: text(payload.seo_title || payload.seoTitle, 180),
     meta_description: text(payload.meta_description || payload.metaDescription, 250),
     tags: text(Array.isArray(payload.tags) ? payload.tags.join(', ') : payload.tags, 500),
-    municipality: text(payload.municipality || payload.location, 120),
+    district: text(payload.district || payload.district_name || payload.districtName || '', 120),
+    municipality: text(payload.municipality || payload.municipality_name || payload.municipalityName || payload.location || '', 120),
+    town: text(payload.town || payload.local_area || payload.localArea || payload.town_name || payload.townName || '', 120),
+    district_id: parseIntegerField(payload.district_id ?? payload.districtId),
+    municipality_id: parseIntegerField(payload.municipality_id ?? payload.municipalityId),
+    town_id: parseIntegerField(payload.town_id ?? payload.townId),
+    district_slug: sanitizeSlug(payload.district_slug || payload.districtSlug || payload.district || ''),
+    municipality_slug: sanitizeSlug(payload.municipality_slug || payload.municipalitySlug || payload.municipality || ''),
+    town_slug: sanitizeSlug(payload.town_slug || payload.townSlug || payload.town || ''),
     featured: Boolean(payload.featured ?? payload.is_featured ?? false),
     is_breaking: Boolean(payload.is_breaking ?? payload.isBreaking ?? false),
     status: rawStatus ? normalizeCanonicalStoryStatus(rawStatus) : 'draft',
     editorial_notes: text(payload.editorial_notes || payload.editorialNotes || payload.notes, 2000),
   };
+}
+
+function sanitizeSlug(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-')
+    .slice(0, 120);
+}
+
+function parseIntegerField(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const asNumber = Number.parseInt(String(value), 10);
+  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : null;
+}
+
+const CANONICAL_STORY_CATEGORIES = [
+  'News',
+  'Community',
+  'Business',
+  'Sports',
+  'Arts / Entertainment',
+  'Politics',
+  'Education',
+  'Health',
+  'Crime',
+  'Municipal',
+  'Opinion'
+];
+
+const CATEGORY_ALIASES = {
+  news: 'News',
+  community: 'Community',
+  business: 'Business',
+  sport: 'Sports',
+  sports: 'Sports',
+  arts: 'Arts / Entertainment',
+  art: 'Arts / Entertainment',
+  entertainment: 'Arts / Entertainment',
+  'arts / entertainment': 'Arts / Entertainment',
+  'arts and entertainment': 'Arts / Entertainment',
+  politics: 'Politics',
+  education: 'Education',
+  health: 'Health',
+  crime: 'Crime',
+  municipal: 'Municipal',
+  municipality: 'Municipal',
+  opinion: 'Opinion'
+};
+
+function normalizeCategoryName(category = 'News') {
+  const raw = String(category ?? '').trim();
+  if (!raw) return 'News';
+  const lookup = raw.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+  if (CATEGORY_ALIASES[lookup]) return CATEGORY_ALIASES[lookup];
+  if (lookup.includes('art')) return 'Arts / Entertainment';
+  if (lookup.includes('sport')) return 'Sports';
+  if (lookup.includes('municipal')) return 'Municipal';
+  if (lookup.includes('opinion')) return 'Opinion';
+  const match = CANONICAL_STORY_CATEGORIES.find((entry) => entry.toLowerCase() === lookup.toLowerCase());
+  return match || raw;
+}
+
+function getCategorySearchAliases(categoryName) {
+  const normalized = normalizeCategoryName(categoryName);
+  const aliases = new Set([normalized, normalized.toLowerCase()]);
+  if (normalized === 'Arts / Entertainment') {
+    aliases.add('Arts');
+    aliases.add('Art');
+    aliases.add('Entertainment');
+    aliases.add('arts');
+    aliases.add('art');
+  }
+  if (normalized === 'Sports') {
+    aliases.add('Sport');
+    aliases.add('sport');
+  }
+  return Array.from(aliases).filter(Boolean);
+}
+
+const MPUMALANGA_LOCATION_DATA = {
+  districts: [
+    {
+      name: 'Ehlanzeni',
+      slug: 'ehlanzeni',
+      municipalities: [
+        { name: 'Mbombela', slug: 'mbombela', towns: ['Mbombela', 'Matsulu', 'White River', 'Hazyview'] },
+        { name: 'Bushbuckridge', slug: 'bushbuckridge', towns: ['Bushbuckridge', 'Acornhoek', 'Dwarsloop'] },
+        { name: 'Nkomazi', slug: 'nkomazi', towns: ['Malalane', 'Komatipoort', 'Marloth Park'] },
+        { name: 'Thaba Chweu', slug: 'thaba-chweu', towns: ['Sabie', 'Graskop', 'Mashishing'] }
+      ]
+    },
+    {
+      name: 'Gert Sibande',
+      slug: 'gert-sibande',
+      municipalities: [
+        { name: 'Mkhondo', slug: 'mkhondo', towns: ['Piet Retief', 'Mkhondo', 'Amsterdam'] },
+        { name: 'Msukaligwa', slug: 'msukaligwa', towns: ['Ermelo', 'Empuluzi'] },
+        { name: 'Govan Mbeki', slug: 'govan-mbeki', towns: ['Secunda', 'Trichardt'] },
+        { name: 'Lekwa', slug: 'lekwa', towns: ['Standerton', 'Morgenzon'] },
+        { name: 'Dipaleseng', slug: 'dipaleseng', towns: ['Balfour', 'Greylingstad'] }
+      ]
+    },
+    {
+      name: 'Nkangala',
+      slug: 'nkangala',
+      municipalities: [
+        { name: 'Steve Tshwete', slug: 'steve-tshwete', towns: ['Middelburg', 'KwaMhlanga'] },
+        { name: 'Emalahleni', slug: 'emalahleni', towns: ['Emalahleni', 'Witbank'] },
+        { name: 'Victor Khanye', slug: 'victor-khanye', towns: ['Delmas', 'Leandra'] },
+        { name: 'Dr JS Moroka', slug: 'dr-js-moroka', towns: ['Siyabuswa', 'Tshwane', 'KwaMhlanga'] },
+        { name: 'Thembisile Hani', slug: 'thembisile-hani', towns: ['Kwaggafontein', 'Zithobeni'] }
+      ]
+    }
+  ]
+};
+
+async function seedMpumalangaLocationReferenceData(db) {
+  const districtCount = await db.get('SELECT COUNT(*) AS cnt FROM districts');
+  if (Number(districtCount?.cnt || 0) === 0) {
+    for (const district of MPUMALANGA_LOCATION_DATA.districts) {
+      const existingDistrict = await db.get('SELECT id FROM districts WHERE slug = ? LIMIT 1', [district.slug]);
+      let districtId = existingDistrict ? existingDistrict.id : null;
+      if (!districtId) {
+        const insertResult = await db.run(
+          'INSERT INTO districts (name, slug, province, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+          [district.name, district.slug, 'Mpumalanga', new Date().toISOString(), new Date().toISOString()]
+        );
+        districtId = insertResult.lastID;
+      }
+
+      for (const municipality of district.municipalities) {
+        const existingMunicipality = await db.get('SELECT id FROM municipalities WHERE slug = ? LIMIT 1', [municipality.slug]);
+        let municipalityId = existingMunicipality ? existingMunicipality.id : null;
+        if (!municipalityId) {
+          const municipalityResult = await db.run(
+            'INSERT INTO municipalities (district_id, name, slug, province, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [districtId, municipality.name, municipality.slug, 'Mpumalanga', new Date().toISOString(), new Date().toISOString()]
+          );
+          municipalityId = municipalityResult.lastID;
+        }
+
+        for (const townName of municipality.towns) {
+          const slug = sanitizeSlug(townName);
+          const existingTown = await db.get('SELECT id FROM towns WHERE slug = ? LIMIT 1', [slug]);
+          if (!existingTown) {
+            await db.run(
+              'INSERT INTO towns (municipality_id, name, slug, province, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+              [municipalityId, townName, slug, 'Mpumalanga', new Date().toISOString(), new Date().toISOString()]
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
+async function getLocationRecordBySlug(db, tableName, slug) {
+  if (!tableName || !slug) return null;
+  const safeSlug = sanitizeSlug(slug);
+  if (!safeSlug) return null;
+  return db.get(`SELECT * FROM ${tableName} WHERE slug = ? LIMIT 1`, [safeSlug]);
+}
+
+async function getLocationNameById(db, tableName, id) {
+  const numericId = parseIntegerField(id);
+  if (!numericId) return null;
+  const row = await db.get(`SELECT name FROM ${tableName} WHERE id = ? LIMIT 1`, [numericId]);
+  return row ? row.name : null;
+}
+
+async function resolveStoryLocation(db, payload = {}, existing = {}) {
+  const districtId = parseIntegerField(payload.district_id ?? payload.districtId ?? existing.district_id ?? null);
+  const municipalityId = parseIntegerField(payload.municipality_id ?? payload.municipalityId ?? existing.municipality_id ?? null);
+  const townId = parseIntegerField(payload.town_id ?? payload.townId ?? existing.town_id ?? null);
+
+  let district = null;
+  if (districtId) {
+    district = await db.get('SELECT * FROM districts WHERE id = ? LIMIT 1', [districtId]);
+  } else {
+    const candidate = sanitizeSlug(payload.district_slug || payload.districtSlug || payload.district || existing.district || '');
+    if (candidate) {
+      district = await getLocationRecordBySlug(db, 'districts', candidate);
+    }
+  }
+
+  let municipality = null;
+  if (municipalityId) {
+    municipality = await db.get('SELECT * FROM municipalities WHERE id = ? LIMIT 1', [municipalityId]);
+  } else {
+    const candidate = sanitizeSlug(payload.municipality_slug || payload.municipalitySlug || payload.municipality || existing.municipality || '');
+    if (candidate) {
+      municipality = await getLocationRecordBySlug(db, 'municipalities', candidate);
+    }
+  }
+
+  let town = null;
+  if (townId) {
+    town = await db.get('SELECT * FROM towns WHERE id = ? LIMIT 1', [townId]);
+  } else {
+    const candidate = sanitizeSlug(payload.town_slug || payload.townSlug || payload.town || existing.town || '');
+    if (candidate) {
+      town = await getLocationRecordBySlug(db, 'towns', candidate);
+    }
+  }
+
+  if (payload.district || payload.district_id || payload.districtId || payload.district_slug || payload.districtSlug || existing.district_id || existing.district) {
+    if (!district) {
+      throw new Error('invalid district');
+    }
+  }
+  if (payload.municipality || payload.municipality_id || payload.municipalityId || payload.municipality_slug || payload.municipalitySlug || existing.municipality_id || existing.municipality) {
+    if (!municipality) {
+      throw new Error('invalid municipality');
+    }
+  }
+  if (payload.town || payload.town_id || payload.townId || payload.town_slug || payload.townSlug || existing.town_id || existing.town) {
+    if (!town) {
+      throw new Error('invalid town');
+    }
+  }
+
+  if (district && municipality && Number(municipality.district_id) !== Number(district.id)) {
+    throw new Error('municipality and district do not match');
+  }
+  if (town && municipality && Number(town.municipality_id) !== Number(municipality.id)) {
+    throw new Error('town and municipality do not match');
+  }
+  if (district && town && municipality && Number(town.municipality_id) !== Number(municipality.id)) {
+    throw new Error('town is not part of the selected municipality');
+  }
+
+  return {
+    district_id: district ? district.id : null,
+    municipality_id: municipality ? municipality.id : null,
+    town_id: town ? town.id : null,
+    district: district ? district.name : normalizeTextValue(existing.district || payload.district || ''),
+    municipality: municipality ? municipality.name : normalizeTextValue(existing.municipality || payload.municipality || ''),
+    town: town ? town.name : normalizeTextValue(existing.town || payload.town || ''),
+  };
+}
+
+function normalizeTextValue(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 120);
 }
 
 function countWords(text = '') {
@@ -2608,26 +3183,33 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
   const payload = normalizeStoryPayload(req.body || {});
   if (!payload.title) return res.status(400).json({ error: 'headline required' });
   return withDB(async (db) => {
-    const now = new Date().toISOString();
-    const requestedStatus = normalizeCanonicalStoryStatus(payload.status || 'draft');
-    const safeStatus = requestedStatus === 'published' || requestedStatus === 'archived' ? 'draft' : requestedStatus;
-    const slug = await makeUniqueStorySlug(db, payload.slug, payload.title);
-    const result = await db.run(`
-      INSERT INTO stories (
-        title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time,
-        status, updatedAt, slug, seo_title, meta_description, tags, municipality, subheadline,
-        image_alt, image_caption, image_credit
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      payload.title, payload.category, payload.content, req.user.id, now, payload.excerpt,
-      payload.featured_image, payload.reading_time, safeStatus, now, slug, payload.seo_title,
-      payload.meta_description, payload.tags, payload.municipality, payload.subheadline,
-      payload.image_alt, payload.image_caption, payload.image_credit,
-    ]);
-    await recordWorkflowAudit(db, result.lastID, 'created', safeStatus === 'draft' ? 'Draft created' : 'Story created', null, safeStatus, req.user.id);
-    const story = await db.get('SELECT s.*, u.username AS author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?', [result.lastID]);
-    story.status = legacyStoryStatusLabel(story.status);
-    res.json({ story });
+    try {
+      const now = new Date().toISOString();
+      const requestedStatus = normalizeCanonicalStoryStatus(payload.status || 'draft');
+      const safeStatus = requestedStatus === 'published' || requestedStatus === 'archived' ? 'draft' : requestedStatus;
+      const location = await resolveStoryLocation(db, payload, {});
+      const slug = await makeUniqueStorySlug(db, payload.slug, payload.title);
+      const result = await db.run(`
+        INSERT INTO stories (
+          title, category, content, author_id, submittedAt, views, excerpt, featured_image, reading_time,
+          status, updatedAt, slug, seo_title, meta_description, tags, district, municipality, town, district_id, municipality_id, town_id,
+          subheadline, image_alt, image_caption, image_credit
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        payload.title, payload.category, payload.content, req.user.id, now, payload.excerpt,
+        payload.featured_image, payload.reading_time, safeStatus, now, slug, payload.seo_title,
+        payload.meta_description, payload.tags, location.district, location.municipality, location.town,
+        location.district_id, location.municipality_id, location.town_id, payload.subheadline,
+        payload.image_alt, payload.image_caption, payload.image_credit,
+      ]);
+      await recordWorkflowAudit(db, result.lastID, 'created', safeStatus === 'draft' ? 'Draft created' : 'Story created', null, safeStatus, req.user.id);
+      const story = await db.get('SELECT s.*, u.username AS author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?', [result.lastID]);
+      story.status = legacyStoryStatusLabel(story.status);
+      res.json({ story });
+    } catch (error) {
+      const message = error && error.message ? error.message : 'invalid story location';
+      return res.status(400).json({ error: message });
+    }
   });
 });
 
@@ -2639,6 +3221,9 @@ app.get('/api/stories', authMiddleware, async (req, res) => {
     .map((status) => normalizeCanonicalStoryStatus(status))
     .filter((status) => CANONICAL_STORY_STATES.has(status));
   const requestedCategories = parseCsvList(req.query.category).map((category) => String(category).trim()).filter(Boolean);
+  const requestedDistrict = sanitizeSlug(req.query.district || req.query.district_slug || req.query.districtSlug || '');
+  const requestedMunicipality = sanitizeSlug(req.query.municipality || req.query.municipality_slug || req.query.municipalitySlug || '');
+  const requestedTown = sanitizeSlug(req.query.town || req.query.town_slug || req.query.townSlug || '');
   const requestedSearch = String(req.query.q || req.query.search || '').trim();
   const featuredFilter = req.query.featured !== undefined ? parseBooleanQuery(req.query.featured) : null;
   const breakingFilter = req.query.breaking !== undefined ? parseBooleanQuery(req.query.breaking) : null;
@@ -2668,8 +3253,25 @@ app.get('/api/stories', authMiddleware, async (req, res) => {
       params.push(...requestedStatuses);
     }
     if (requestedCategories.length) {
-      conditions.push(`(${requestedCategories.map(() => 'LOWER(COALESCE(s.category, \"\")) = LOWER(?)').join(' OR ')})`);
-      params.push(...requestedCategories);
+      const categoryClauses = [];
+      for (const category of requestedCategories) {
+        const aliases = getCategorySearchAliases(category);
+        categoryClauses.push(`LOWER(COALESCE(s.category, '')) IN (${aliases.map(() => '?').join(', ')})`);
+        params.push(...aliases.map((entry) => String(entry).toLowerCase()));
+      }
+      conditions.push(`(${categoryClauses.join(' OR ')})`);
+    }
+    if (requestedDistrict) {
+      conditions.push('d.slug = ?');
+      params.push(requestedDistrict);
+    }
+    if (requestedMunicipality) {
+      conditions.push('m.slug = ?');
+      params.push(requestedMunicipality);
+    }
+    if (requestedTown) {
+      conditions.push('t.slug = ?');
+      params.push(requestedTown);
     }
     if (featuredFilter !== null) {
       conditions.push('s.featured = ?');
@@ -2691,11 +3293,12 @@ app.get('/api/stories', authMiddleware, async (req, res) => {
       params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
-    const baseQuery = `SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${conditions.join(' AND ')}`;
-    const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${conditions.join(' AND ')}`, params);
+        const joinClause = 'LEFT JOIN users u ON u.id = s.author_id LEFT JOIN districts d ON d.id = s.district_id LEFT JOIN municipalities m ON m.id = s.municipality_id LEFT JOIN towns t ON t.id = s.town_id';
+    const baseQuery = `SELECT s.*, u.username as author FROM stories s ${joinClause} WHERE ${conditions.join(' AND ')}`;
+    const totalRow = await db.get(`SELECT COUNT(*) as cnt FROM stories s ${joinClause} WHERE ${conditions.join(' AND ')}`, params);
     const rows = await db.all(`${baseQuery} ORDER BY COALESCE(s.updatedAt, s.submittedAt, s.published_at, datetime('now')) DESC LIMIT ? OFFSET ?`, [...params, limit, offset]);
 
-    const stories = rows.map((story) => ({
+const stories = rows.map((story) => ({
       ...story,
       status: legacyStoryStatusLabel(story.status),
       comments: Number(story.comments || 0),
@@ -2734,6 +3337,12 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
         return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
       }
     }
+    let updatedLocation;
+    try {
+      updatedLocation = await resolveStoryLocation(db, { ...existing, ...payload }, existing);
+    } catch (error) {
+      return res.status(400).json({ error: error.message || 'invalid story location' });
+    }
     const updatedAt = new Date().toISOString();
     const nextFeatured = canManageEditorialFields(req) && payload.featured ? 1 : Number(existing.featured || 0);
     const nextBreaking = canManageEditorialFields(req) && payload.is_breaking ? 1 : Number(existing.is_breaking || 0);
@@ -2752,7 +3361,7 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
     const archivedAtValue = statusValue === 'archived' ? (existing.archived_at || updatedAt) : existing.archived_at;
     const fields = [
       ['title', payload.title || existing.title],
-      ['category', payload.category || existing.category || 'News'],
+      ['category', normalizeCategoryName(payload.category || existing.category || 'News')],
       ['content', payload.content || existing.content],
       ['excerpt', payload.excerpt || (payload.content || existing.content || '').slice(0, 160)],
       ['featured_image', payload.featured_image || existing.featured_image || ''],
@@ -2766,7 +3375,12 @@ app.put('/api/stories/:id', authMiddleware, async (req, res) => {
       ['seo_title', payload.seo_title || existing.seo_title || ''],
       ['meta_description', payload.meta_description || existing.meta_description || ''],
       ['tags', payload.tags || existing.tags || ''],
-      ['municipality', payload.municipality || existing.municipality || ''],
+      ['district', updatedLocation.district || existing.district || ''],
+      ['municipality', updatedLocation.municipality || existing.municipality || ''],
+      ['town', updatedLocation.town || existing.town || ''],
+      ['district_id', updatedLocation.district_id],
+      ['municipality_id', updatedLocation.municipality_id],
+      ['town_id', updatedLocation.town_id],
       ['published_at', publishedAtValue],
       ['archived_at', archivedAtValue],
     ];

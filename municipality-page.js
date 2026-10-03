@@ -315,16 +315,17 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function buildMunicipalityPageHtml(municipality, articles, req) {
-  const featured = articles.find((article) => article.featured) || articles[0];
-  const latest = articles.slice(0, 4);
-  const trending = articles.slice(1, 4);
-  const politics = articles.filter((article) => article.category === 'Politics');
-  const business = articles.filter((article) => article.category === 'Business');
-  const sports = articles.filter((article) => article.category === 'Sports');
-  const community = articles.filter((article) => article.category === 'Community');
-  const health = articles.filter((article) => article.category === 'Health');
-  const education = articles.filter((article) => article.category === 'Education');
+function buildMunicipalityPageHtml(municipality, articles = [], req) {
+  const safeArticles = Array.isArray(articles) ? articles : [];
+  const featured = safeArticles.find((article) => article.featured) || safeArticles[0] || null;
+  const latest = safeArticles.slice(0, 4);
+  const trending = safeArticles.slice(1, 4);
+  const politics = safeArticles.filter((article) => article.category === 'Politics');
+  const business = safeArticles.filter((article) => article.category === 'Business');
+  const sports = safeArticles.filter((article) => article.category === 'Sports');
+  const community = safeArticles.filter((article) => article.category === 'Community');
+  const health = safeArticles.filter((article) => article.category === 'Health');
+  const education = safeArticles.filter((article) => article.category === 'Education');
   const shareUrl = `${req.protocol}://${req.get('host')}/municipality/${municipality.slug}`;
 
   return `<!doctype html>
@@ -472,30 +473,38 @@ function buildMunicipalityPageHtml(municipality, articles, req) {
 
     <div class="grid">
       <section aria-label="Latest news">
-        <div class="card">
-          <div class="pill">Featured story</div>
-          <h2 style="margin:10px 0 8px;">${escapeHtml(featured.title)}</h2>
-          <p class="muted">${escapeHtml(featured.excerpt)}</p>
-          <div class="button-row">
-            <button type="button">Read full story</button>
-            <button type="button" class="btn secondary">Bookmark</button>
-            <button type="button" class="btn secondary">Share</button>
+        ${featured ? `
+          <div class="card">
+            <div class="pill">Featured story</div>
+            <h2 style="margin:10px 0 8px;">${escapeHtml(featured.title)}</h2>
+            <p class="muted">${escapeHtml(featured.excerpt || featured.summary || '')}</p>
+            <div class="button-row">
+              <button type="button">Read full story</button>
+              <button type="button" class="btn secondary">Bookmark</button>
+              <button type="button" class="btn secondary">Share</button>
+            </div>
           </div>
-        </div>
+        ` : `
+          <div class="card">
+            <div class="pill">Local reporting</div>
+            <h2 style="margin:10px 0 8px;">No published stories are available for this area yet.</h2>
+            <p class="muted">Check back soon for the latest ${escapeHtml(municipality.name)} news, community updates and public service reporting.</p>
+          </div>
+        `}
         <div class="card" style="margin-top:18px;">
           <h2 style="margin-top:0;">Latest news</h2>
           <div class="news-list">
-            ${latest.map((article) => `
+            ${latest.length ? latest.map((article) => `
               <article class="news-item">
-                <img src="${escapeAttr(article.image)}" alt="${escapeHtml(article.title)}" />
+                <img src="${escapeAttr(article.image || municipality.heroImage)}" alt="${escapeHtml(article.title)}" />
                 <div>
-                  <div class="pill">${escapeHtml(article.category)}</div>
+                  <div class="pill">${escapeHtml(article.category || 'News')}</div>
                   <h3 style="margin:8px 0 6px; font-size:1rem;">${escapeHtml(article.title)}</h3>
-                  <p class="muted" style="margin:0 0 8px;">${escapeHtml(article.summary || article.excerpt)}</p>
-                  <div class="muted" style="font-size:.9rem;">By ${escapeHtml(article.author)} • ${escapeHtml(formatDate(article.publishedAt))} • ${article.readingTime} min read</div>
+                  <p class="muted" style="margin:0 0 8px;">${escapeHtml(article.summary || article.excerpt || '')}</p>
+                  <div class="muted" style="font-size:.9rem;">By ${escapeHtml(article.author || 'Mpumalanga Local Time')} • ${escapeHtml(formatDate(article.publishedAt || municipality.latestUpdate))} • ${article.readingTime || 3} min read</div>
                 </div>
               </article>
-            `).join('')}
+            `).join('') : '<p class="muted">No published stories are available for this area yet.</p>'}
           </div>
         </div>
       </section>
