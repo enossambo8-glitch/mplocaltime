@@ -1,3 +1,4 @@
-# Google AdSense placeholder for Mpumalanga Local Time
-# Replace the sample publisher ID with your own AdSense publisher ID once approved.
-google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+# Google AdSense seller declaration is intentionally not configured.
+# Configure ADSENSE_ADS_TXT_ENTRY only after Google provides the approved
+# authorised seller record for the production MLT domain.
+# No fake publisher or seller relationship is claimed here.

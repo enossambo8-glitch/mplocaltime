@@ -44,6 +44,59 @@ const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
 const SEED_DEMO_USERS = Boolean(INITIAL_PASSWORD && INITIAL_USER_PASSWORD);
 const CANONICAL_ROLES = ['admin', 'editor', 'journalist', 'contributor', 'user'];
 const AD_PLACEMENTS = ['homepage_top', 'homepage_mid', 'homepage_sidebar', 'article_top', 'article_inline', 'article_sidebar', 'article_bottom', 'category_top', 'category_sidebar', 'municipality_top', 'municipality_sidebar'];
+
+function normalizeAdsensePublisherId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (!/^ca-pub-[0-9]+$/i.test(raw)) return '';
+  return raw;
+}
+
+function normalizeAdsTxtEntry(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw || /[<>]/.test(raw)) return '';
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  if (!/^google\.com,\s*(?:ca-pub-|pub-)[A-Za-z0-9-]+,\s*(?:DIRECT|RESELLER),\s*[A-Za-z0-9]+$/i.test(normalized)) {
+    return '';
+  }
+  return normalized;
+}
+
+function getAdsenseConfig() {
+  const enabled = String(process.env.ADSENSE_ENABLED || '').trim().toLowerCase() === 'true';
+  const publisherId = normalizeAdsensePublisherId(process.env.ADSENSE_PUBLISHER_ID || '');
+  const adsTxtEntry = normalizeAdsTxtEntry(process.env.ADSENSE_ADS_TXT_ENTRY || '');
+  return {
+    enabled,
+    publisherId,
+    adsTxtEntry,
+    isReady: enabled && Boolean(publisherId),
+  };
+}
+
+function getAdsenseScriptTag() {
+  const { enabled, publisherId } = getAdsenseConfig();
+  if (!enabled || !publisherId) return '';
+  const safePublisherId = String(publisherId).replace(/[\"'<>\u0000-\u001F]/g, '');
+  return `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(safePublisherId)}" crossorigin="anonymous"></script>`;
+}
+
+function injectAdsenseScriptIntoHtml(html) {
+  if (typeof html !== 'string' || !html.includes('</head>')) return html;
+  const scriptTag = getAdsenseScriptTag();
+  if (!scriptTag) return html;
+  return html.replace(/<\/head>/i, `${scriptTag}\n</head>`);
+}
+
+function sendHtmlFileWithAdsense(res, filePath) {
+  try {
+    const html = fs.readFileSync(filePath, 'utf8');
+    return res.type('text/html; charset=utf-8').send(injectAdsenseScriptIntoHtml(html));
+  } catch (error) {
+    return res.status(500).send('Unable to read page template.');
+  }
+}
+
 let hasResetTestDatabase = false;
 const ROLE_ALIASES = {
   admin: 'admin',
@@ -1396,9 +1449,28 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/public', express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), { index: false, redirect: false }));
 
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+  res.send = function sendWithAdsense(body, ...args) {
+    if (typeof body === 'string' && /<!doctype html|<html/i.test(body) && /<\/head>/i.test(body)) {
+      body = injectAdsenseScriptIntoHtml(body);
+    }
+    return originalSend(body, ...args);
+  };
+  next();
+});
+
 // Serve index.html for root
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  sendHtmlFileWithAdsense(res, path.join(__dirname, 'index.html'));
+});
+
+app.get('/ads.txt', (req, res) => {
+  const configuredEntry = normalizeAdsTxtEntry(process.env.ADSENSE_ADS_TXT_ENTRY || '');
+  const body = configuredEntry
+    ? `${configuredEntry}\n`
+    : '# Google AdSense seller declaration is intentionally unconfigured.\n# Configure ADSENSE_ADS_TXT_ENTRY only after Google provides the authorised seller record for the MLT production domain.\n';
+  res.type('text/plain; charset=utf-8').send(body);
 });
 
 app.get('/api/municipalities', async (req, res) => {
@@ -2704,7 +2776,7 @@ app.get('/:page', (req, res, next) => {
   const cleanPage = page.toLowerCase();
   const safeFile = cleanPage.endsWith('.html') ? cleanPage : `${cleanPage}.html`;
   if (ALLOWED_HTML_PAGES.has(safeFile)) {
-    return res.sendFile(path.join(__dirname, safeFile));
+    return sendHtmlFileWithAdsense(res, path.join(__dirname, safeFile));
   }
   next();
 });
