@@ -18,6 +18,24 @@ const {
   buildMunicipalityPageHtml,
   buildMunicipalityListHtml,
 } = require('./municipality-page');
+const {
+  SITE_NAME,
+  SITE_URL,
+  buildUrl,
+  resolveAssetUrl,
+  jsonLdScript,
+  safeScriptLiteral,
+  buildDescription,
+  buildUrlsetXml,
+  buildNewsSitemapXml,
+  buildRssXml,
+} = require('./seo');
+
+// Google News sitemaps are expected to cover only very recent articles, not a
+// full archive. 48 hours matches Google's published-news recency guidance.
+const NEWS_SITEMAP_WINDOW_HOURS = 48;
+// Reasonable cap so the RSS feed never dumps the entire stories table.
+const RSS_FEED_LIMIT = 50;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'testsecret';
 
@@ -1458,7 +1476,8 @@ app.get('/municipality/:slug', async (req, res) => {
       area: 'Local area',
       heroImage: '/logo.png',
       description: `News and local reporting for ${municipality.name}, ${municipality.district_name}.`,
-      tags: ['Local news', 'Community']
+      tags: ['Local news', 'Community'],
+      latestUpdate: rows[0]?.published_at || now,
     };
     res.send(buildMunicipalityPageHtml(location, articles, req));
   });
@@ -1516,30 +1535,115 @@ app.get('/town/:slug', async (req, res) => {
   });
 });
 
-app.get('/sitemap.xml', (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
-  const urls = [
-    '/',
-    '/news.html',
-    '/business.html',
-    '/community.html',
-    '/sports.html',
-    '/municipalities',
-    ...MUNICIPALITIES.map((municipality) => `/municipality/${municipality.slug}`)
-  ];
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((entry) => `\n  <url><loc>${baseUrl}${entry}</loc></url>`).join('')}\n</urlset>\n`;
-  res.type('application/xml').send(xml);
+// MLT-006: standard sitemap. Only legitimately public surfaces are listed —
+// published stories (via the shared publicStoryWhereClause rule), valid
+// categories and municipalities, and the homepage. Never drafts, submitted/
+// review stories, future-scheduled stories, archived stories or newsroom/
+// admin URLs.
+app.get('/sitemap.xml', async (req, res) => {
+  return withDB(async (db) => {
+    const now = nowISO();
+    const staticUrls = [
+      { loc: '/' },
+      { loc: '/news.html' },
+      { loc: '/business.html' },
+      { loc: '/community.html' },
+      { loc: '/sports.html' },
+      { loc: '/municipalities' },
+    ];
+
+    const dbMunicipalities = await db.all('SELECT slug FROM municipalities').catch(() => []);
+    const municipalitySlugs = new Set(MUNICIPALITIES.map((m) => m.slug));
+    for (const row of dbMunicipalities) {
+      if (row && row.slug) municipalitySlugs.add(row.slug);
+    }
+    const municipalityUrls = Array.from(municipalitySlugs)
+      .sort()
+      .map((slug) => ({ loc: `/municipality/${encodeURIComponent(slug)}` }));
+
+    const stories = await db.all(`
+      SELECT s.slug, s.id, s.published_at, s.updatedAt
+      FROM stories s
+      WHERE ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC
+      LIMIT 5000
+    `, [now]);
+    const storyUrls = stories.map((story) => {
+      const modified = story.updatedAt || story.published_at;
+      return {
+        loc: `/story/${encodeURIComponent(story.slug || story.id)}`,
+        lastmod: modified ? new Date(modified).toISOString() : undefined,
+      };
+    });
+
+    const seen = new Set();
+    const urls = [...staticUrls, ...municipalityUrls, ...storyUrls].filter((entry) => {
+      if (seen.has(entry.loc)) return false;
+      seen.add(entry.loc);
+      return true;
+    });
+
+    res.type('application/xml; charset=utf-8').send(buildUrlsetXml(urls));
+  });
 });
 
-app.get('/news-sitemap.xml', (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${MUNICIPALITIES.map((municipality) => `\n  <url><loc>${baseUrl}/municipality/${municipality.slug}</loc></url>`).join('')}\n</urlset>\n`;
-  res.type('application/xml').send(xml);
+// MLT-006: Google News sitemap. This is a short, rolling window of recent
+// published news, never a full archive, and follows the same public
+// visibility rule as the rest of the site.
+app.get('/news-sitemap.xml', async (req, res) => {
+  return withDB(async (db) => {
+    const now = nowISO();
+    const windowStart = new Date(Date.now() - NEWS_SITEMAP_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+    const stories = await db.all(`
+      SELECT s.slug, s.id, s.title, s.published_at
+      FROM stories s
+      WHERE ${publicStoryWhereClause('s')} AND s.published_at >= ?
+      ORDER BY s.published_at DESC
+      LIMIT 1000
+    `, [now, windowStart]);
+    res.type('application/xml; charset=utf-8').send(buildNewsSitemapXml(stories));
+  });
 });
 
 app.get('/robots.txt', (req, res) => {
-  res.type('text/plain').send('User-agent: *\nAllow: /\nSitemap: ' + `${req.protocol}://${req.get('host')}/sitemap.xml`);
+  const lines = [
+    'User-agent: *',
+    'Allow: /',
+    'Disallow: /api/',
+    'Disallow: /admin.html',
+    'Disallow: /dashboard.html',
+    'Disallow: /login.html',
+    '',
+    `Sitemap: ${buildUrl('/sitemap.xml')}`,
+    `Sitemap: ${buildUrl('/news-sitemap.xml')}`,
+  ];
+  res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
+
+// MLT-006: RSS 2.0 feed of recent published stories, newest first.
+app.get('/rss.xml', async (req, res) => {
+  return withDB(async (db) => {
+    const now = nowISO();
+    const stories = await db.all(`
+      SELECT s.slug, s.id, s.title, s.excerpt, s.meta_description, s.category, s.published_at, u.username as author
+      FROM stories s
+      LEFT JOIN users u ON u.id = s.author_id
+      WHERE ${publicStoryWhereClause('s')}
+      ORDER BY s.published_at DESC, s.id DESC
+      LIMIT ${RSS_FEED_LIMIT}
+    `, [now]);
+    const xml = buildRssXml(stories, {
+      title: SITE_NAME,
+      link: buildUrl('/'),
+      description: 'Trusted local news, business, sport, arts and community coverage across Mpumalanga.',
+    });
+    res.type('application/rss+xml; charset=utf-8').send(xml);
+  });
+});
+
+// Optional alias kept as a simple redirect so there is a single source of
+// truth for feed generation.
+app.get('/feed.xml', (req, res) => res.redirect(301, '/rss.xml'));
 
 // For any non-API route, check if HTML file exists
 function escapeInteger(value) {
@@ -4269,8 +4373,9 @@ app.get('/story/:id', async (req, res) => {
     }
 
     const title = s.seo_title || s.title || 'Article';
-    const excerpt = s.meta_description || s.excerpt || (s.content ? sanitizeHtml(s.content, { allowedTags: [], allowedAttributes: {} }).slice(0, 160) : '');
+    const excerpt = buildDescription(s.meta_description || s.excerpt || s.content, { maxLength: 160 });
     const image = s.featured_image || '/logo.png';
+    const imageUrl = resolveAssetUrl(image);
     const imageAlt = s.image_alt || s.title || 'Mpumalanga Local Time';
     const publishedAt = s.published_at ? new Date(s.published_at).toISOString() : '';
     const JOHANNESBURG_TZ = 'Africa/Johannesburg';
@@ -4280,8 +4385,29 @@ app.get('/story/:id', async (req, res) => {
     // edited after first publication (e.g. a correction), not on every internal touch.
     const wasUpdatedAfterPublish = s.updatedAt && publishedAt && new Date(s.updatedAt).getTime() > new Date(publishedAt).getTime() + 60000;
     const updatedDisplay = wasUpdatedAfterPublish ? new Date(s.updatedAt).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short', timeZone: JOHANNESBURG_TZ }) : '';
-    const canonicalUrl = req.protocol + '://' + req.get('host') + '/story/' + (s.slug || s.id);
+    // Canonical/OG URLs always derive from the configured SITE_URL, never
+    // from the incoming request's Host header, so they can't be spoofed.
+    const canonicalUrl = buildUrl(`/story/${encodeURIComponent(s.slug || s.id)}`);
     const shareUrl = canonicalUrl;
+    const storyAuthorName = s.author || SITE_NAME;
+    const newsArticleJsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'NewsArticle',
+      headline: title,
+      description: excerpt || undefined,
+      image: imageUrl ? [imageUrl] : undefined,
+      datePublished: publishedAt || undefined,
+      dateModified: updatingAt || undefined,
+      mainEntityOfPage: { '@type': 'WebPage', '@id': canonicalUrl },
+      url: canonicalUrl,
+      author: { '@type': 'Person', name: storyAuthorName },
+      articleSection: s.category || undefined,
+      publisher: {
+        '@type': 'Organization',
+        name: SITE_NAME,
+        logo: { '@type': 'ImageObject', url: buildUrl('/logo.png') },
+      },
+    };
     const authorAvatar = s.author_avatar || '/logo.png';
     const authorDescription = s.author_bio || `Local ${escapeHtml(s.category || 'news').toLowerCase()} reporter bringing stories from around Mpumalanga to readers every day.`;
     const contentHtml = formatArticleContent(s.content || '');
@@ -4368,15 +4494,17 @@ app.get('/story/:id', async (req, res) => {
   <meta property="og:type" content="article" />
   <meta property="og:title" content="${escapeHtml(title)} - Mpumalanga Local Time" />
   <meta property="og:description" content="${escapeHtml(excerpt)}" />
-  <meta property="og:image" content="${escapeHtml(image)}" />
+  ${imageUrl ? `<meta property="og:image" content="${escapeHtml(imageUrl)}" />` : ''}
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
   <meta property="article:published_time" content="${publishedAt}" />
   <meta property="article:modified_time" content="${updatingAt}" />
+  ${s.category ? `<meta property="article:section" content="${escapeHtml(s.category)}" />` : ''}
   <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
-  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="alternate" type="application/rss+xml" title="Mpumalanga Local Time RSS" href="${escapeHtml(buildUrl('/rss.xml'))}" />
+  <meta name="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
   <meta name="twitter:title" content="${escapeHtml(title)}" />
   <meta name="twitter:description" content="${escapeHtml(excerpt)}" />
-  <meta name="twitter:image" content="${escapeHtml(image)}" />
+  ${imageUrl ? `<meta name="twitter:image" content="${escapeHtml(imageUrl)}" />` : ''}
   <link rel="stylesheet" href="/styles.css" />
   <style>
     :root { color-scheme: light; font-family: 'Open Sans', Arial, sans-serif; }
@@ -4459,18 +4587,7 @@ app.get('/story/:id', async (req, res) => {
     .cm-footer-bottom-row { text-align:center; margin-top:28px; color:#999; font-size:.9rem; }
     @media (min-width: 900px) { .cm-main-row { display:flex; align-items:center; justify-content:space-between; } .cm-site-branding { gap:1rem; } .cm-primary { width:100%; } .cm-posts { grid-template-columns: 1fr 320px; } }
   </style>
-  <script type="application/ld+json">{
-    "@context":"https://schema.org",
-    "@type":"BlogPosting",
-    "headline":"${escapeHtml(title)}",
-    "description":"${escapeHtml(excerpt)}",
-    "image":"${escapeHtml(image)}",
-    "author":{"@type":"Person","name":"${escapeHtml(s.author || 'Mpumalanga Local Time')}"},
-    "publisher":{"@type":"Organization","name":"Mpumalanga Local Time","logo":{"@type":"ImageObject","url":"https://mplocaltime.co.za/logo.png"}},
-    "datePublished":"${publishedAt}",
-    "dateModified":"${updatingAt}",
-    "mainEntityOfPage":{"@type":"WebPage","@id":"${escapeHtml(canonicalUrl)}"}
-  }</script>
+  ${jsonLdScript(newsArticleJsonLd)}
 </head>
 <body class="wp-singular post-template-default single single-post postid-${s.id} single-format-standard">
   <div id="page" class="hfeed site">
@@ -4590,8 +4707,8 @@ app.get('/story/:id', async (req, res) => {
   </div>
   <script>
     (function() {
-      const shareUrl = ${JSON.stringify(shareUrl)};
-      const shareText = ${JSON.stringify(title)};
+      const shareUrl = ${safeScriptLiteral(shareUrl)};
+      const shareText = ${safeScriptLiteral(title)};
       const shareButtons = document.querySelectorAll('[data-article-share]');
 
       const handleShare = (mode, url, text) => {

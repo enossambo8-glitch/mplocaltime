@@ -1,3 +1,5 @@
+const { SITE_NAME, buildUrl, jsonLdScript } = require('./seo');
+
 const MUNICIPALITIES = [
   {
     name: 'Mbombela',
@@ -326,7 +328,46 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
   const community = safeArticles.filter((article) => article.category === 'Community');
   const health = safeArticles.filter((article) => article.category === 'Health');
   const education = safeArticles.filter((article) => article.category === 'Education');
-  const shareUrl = `${req.protocol}://${req.get('host')}/municipality/${municipality.slug}`;
+  // Canonical/OG URLs always derive from the configured SITE_URL, never from
+  // the incoming request's Host header, so they can't be spoofed.
+  const shareUrl = buildUrl(`/municipality/${municipality.slug}`);
+  const municipalityDate = municipality.latestUpdate || new Date().toISOString();
+  const municipalityJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'NewsArticle',
+    headline: `${municipality.name} Municipality News`,
+    description: municipality.description,
+    image: municipality.heroImage ? [municipality.heroImage] : undefined,
+    author: { '@type': 'Organization', name: SITE_NAME },
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      logo: { '@type': 'ImageObject', url: buildUrl('/logo.png') },
+    },
+    mainEntityOfPage: shareUrl,
+    datePublished: municipalityDate,
+    dateModified: municipalityDate,
+  };
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: buildUrl('/') },
+      { '@type': 'ListItem', position: 2, name: 'Municipalities', item: buildUrl('/municipalities') },
+      { '@type': 'ListItem', position: 3, name: municipality.name, item: shareUrl },
+    ],
+  };
+  const placeJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Place',
+    name: municipality.name,
+    description: municipality.description,
+    address: { '@type': 'PostalAddress', addressRegion: 'Mpumalanga' },
+    additionalProperty: [
+      { '@type': 'PropertyValue', name: 'District Municipality', value: municipality.district },
+      { '@type': 'PropertyValue', name: 'Population', value: municipality.population },
+    ],
+  };
 
   return `<!doctype html>
 <html lang="en-ZA" dir="ltr">
@@ -337,6 +378,7 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
   <meta name="description" content="${escapeHtml(municipality.description)}" />
   <link rel="canonical" href="${escapeAttr(shareUrl)}" />
   <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta property="og:site_name" content="${escapeHtml(SITE_NAME)}" />
   <meta property="og:title" content="${escapeHtml(municipality.name)} Municipality News | Mpumalanga Local Time" />
   <meta property="og:description" content="${escapeHtml(municipality.description)}" />
   <meta property="og:type" content="website" />
@@ -346,6 +388,7 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
   <meta name="twitter:title" content="${escapeHtml(municipality.name)} Municipality News" />
   <meta name="twitter:description" content="${escapeHtml(municipality.description)}" />
   <meta name="twitter:image" content="${escapeAttr(municipality.heroImage)}" />
+  <link rel="alternate" type="application/rss+xml" title="Mpumalanga Local Time RSS" href="${escapeAttr(buildUrl('/rss.xml'))}" />
   <style>
     :root { color-scheme: light dark; --accent:#c62828; --ink:#111827; --muted:#6b7280; --bg:#f8fafc; --card:#fff; --border:#e5e7eb; }
     * { box-sizing:border-box; }
@@ -391,59 +434,9 @@ function buildMunicipalityPageHtml(municipality, articles = [], req) {
     @media (max-width:900px) { .grid { grid-template-columns:1fr; } .gallery { grid-template-columns:1fr 1fr; } }
     @media (max-width:640px) { .hero { min-height:480px; } .news-item { grid-template-columns:1fr; } .gallery { grid-template-columns:1fr; } }
   </style>
-  <script type="application/ld+json">{
-    "@context": "https://schema.org",
-    "@type": "NewsArticle",
-    "headline": "${escapeHtml(municipality.name)} Municipality News",
-    "description": "${escapeHtml(municipality.description)}",
-    "image": ["${escapeAttr(municipality.heroImage)}"],
-    "author": {
-      "@type": "Organization",
-      "name": "Mpumalanga Local Time"
-    },
-    "publisher": {
-      "@type": "Organization",
-      "name": "Mpumalanga Local Time",
-      "logo": {
-        "@type": "ImageObject",
-        "url": "https://mplocaltime.co.za/logo.png"
-      }
-    },
-    "mainEntityOfPage": "${escapeAttr(shareUrl)}",
-    "datePublished": "${escapeAttr(municipality.latestUpdate)}",
-    "dateModified": "${escapeAttr(municipality.latestUpdate)}"
-  }</script>
-  <script type="application/ld+json">{
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      {"@type": "ListItem", "position": 1, "name": "Home", "item": "${escapeAttr(`${req.protocol}://${req.get('host')}`)}"},
-      {"@type": "ListItem", "position": 2, "name": "Municipalities", "item": "${escapeAttr(`${req.protocol}://${req.get('host')}/municipalities`)}"},
-      {"@type": "ListItem", "position": 3, "name": "${escapeHtml(municipality.name)}", "item": "${escapeAttr(shareUrl)}"}
-    ]
-  }</script>
-  <script type="application/ld+json">{
-    "@context": "https://schema.org",
-    "@type": "Place",
-    "name": "${escapeHtml(municipality.name)}",
-    "description": "${escapeHtml(municipality.description)}",
-    "address": {
-      "@type": "PostalAddress",
-      "addressRegion": "Mpumalanga"
-    },
-    "additionalProperty": [
-      {
-        "@type": "PropertyValue",
-        "name": "District Municipality",
-        "value": "${escapeHtml(municipality.district)}"
-      },
-      {
-        "@type": "PropertyValue",
-        "name": "Population",
-        "value": "${escapeHtml(municipality.population)}"
-      }
-    ]
-  }</script>
+  ${jsonLdScript(municipalityJsonLd)}
+  ${jsonLdScript(breadcrumbJsonLd)}
+  ${jsonLdScript(placeJsonLd)}
 </head>
 <body>
   <div class="topbar"><div class="inner"><span>Mpumalanga Local Time • Independent local reporting</span><span>Updated ${escapeHtml(new Date(municipality.latestUpdate).toLocaleDateString('en-ZA', { day:'numeric', month:'short', year:'numeric' }))}</span></div></div>
@@ -640,7 +633,13 @@ function buildMunicipalityListHtml(req) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Municipalities | Mpumalanga Local Time</title>
   <meta name="description" content="Browse dedicated municipality pages for Mpumalanga news, governance and community reporting." />
-  <link rel="canonical" href="${escapeAttr(`${req.protocol}://${req.get('host')}/municipalities`)}" />
+  <link rel="canonical" href="${escapeAttr(buildUrl('/municipalities'))}" />
+  <meta property="og:site_name" content="${escapeHtml(SITE_NAME)}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Municipalities | Mpumalanga Local Time" />
+  <meta property="og:description" content="Browse dedicated municipality pages for Mpumalanga news, governance and community reporting." />
+  <meta property="og:url" content="${escapeAttr(buildUrl('/municipalities'))}" />
+  <link rel="alternate" type="application/rss+xml" title="Mpumalanga Local Time RSS" href="${escapeAttr(buildUrl('/rss.xml'))}" />
   <style>body{font-family:Inter,Arial,sans-serif;margin:0;padding:0;background:#f8fafc;color:#111827;} main{max-width:960px;margin:0 auto;padding:24px 18px 48px;} .card{background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:20px;box-shadow:0 15px 40px rgba(15,23,42,.04);} ul{list-style:none;padding:0;margin:0;} a{color:#c62828;text-decoration:none;} h1{margin-top:0;}</style>
 </head>
 <body>
