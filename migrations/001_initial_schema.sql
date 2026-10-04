@@ -377,7 +377,7 @@ CREATE TABLE IF NOT EXISTS weather_locations (
   municipality VARCHAR(180) NOT NULL,
   slug VARCHAR(220) NULL,
   temperature VARCHAR(50) NULL,
-  condition VARCHAR(120) NULL,
+  `condition` VARCHAR(120) NULL,
   humidity VARCHAR(50) NULL,
   wind_speed VARCHAR(50) NULL,
   sunrise VARCHAR(50) NULL,

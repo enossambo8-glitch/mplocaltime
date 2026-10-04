@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
+let sqlite3;
+function getSqlite3() {
+  if (sqlite3 == null) sqlite3 = require("sqlite3").verbose();
+  return sqlite3;
+}
 const { createPool, isMysqlConfigured } = require('./server/db/pool');
 const { normalizeSqlForMysql, getTableColumns } = require('./server/db/query');
 
@@ -111,7 +115,7 @@ async function init() {
   const isTestRun = (process.env.NODE_ENV === 'test' || process.argv.includes('--test') || (Array.isArray(process.execArgv) && process.execArgv.includes('--test'))) && !hasExplicitDatabasePath;
   if (isTestRun) {
     if (!testMemoryDb) {
-      const raw = new sqlite3.Database(':memory:');
+      const raw = new (getSqlite3()).Database(':memory:');
       testMemoryDb = wrapSqlite(raw, { keepAliveOnClose: true });
       await testMemoryDb.exec('PRAGMA foreign_keys = ON;');
     }
@@ -120,7 +124,7 @@ async function init() {
 
   const databasePath = resolveDatabasePath();
   ensureDatabaseDirectory(databasePath);
-  const raw = new sqlite3.Database(databasePath);
+  const raw = new (getSqlite3()).Database(databasePath);
   const db = wrapSqlite(raw);
   await db.exec('PRAGMA foreign_keys = ON;');
   await db.exec('PRAGMA journal_mode = WAL;');

@@ -6,9 +6,9 @@ const migrationDirectory = path.join(__dirname, '..', '..', 'migrations');
 
 async function getAppliedMigrations(connection) {
   const [rows] = await connection.execute(
-    'SELECT name FROM schema_migrations ORDER BY id ASC'
+    'SELECT migration_name FROM schema_migrations ORDER BY id ASC'
   );
-  return new Set(rows.map((row) => row.name));
+  return new Set(rows.map((row) => row.migration_name));
 }
 
 function getMigrationFiles() {

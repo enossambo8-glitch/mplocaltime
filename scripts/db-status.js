@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { init, resolveDatabasePath, isMysqlConfigured } = require('../db');
 
 async function main() {
