@@ -1,0 +1,14 @@
+CREATE INDEX idx_stories_status_published_at ON stories (status, published_at);
+CREATE INDEX idx_stories_slug_status ON stories (slug, status);
+CREATE INDEX idx_stories_category_published ON stories (category, published_at);
+CREATE INDEX idx_stories_author_status ON stories (author_id, status);
+CREATE INDEX idx_comments_story_created ON comments (story_id, created_at);
+CREATE INDEX idx_comments_status_created ON comments (status, created_at);
+CREATE INDEX idx_newsletter_email_status ON newsletter_subscribers (email, status);
+CREATE INDEX idx_notifications_user_status ON notifications (recipient_id, status, created_at);
+CREATE INDEX idx_media_created_at ON media (createdAt);
+CREATE INDEX idx_ad_campaigns_status_dates ON ad_campaigns (status, start_date, end_date);
+CREATE INDEX idx_ad_impressions_campaign_created ON ad_impressions (campaign_id, created_at);
+CREATE INDEX idx_ad_clicks_campaign_created ON ad_clicks (campaign_id, created_at);
+CREATE INDEX idx_users_role_active ON users (role, is_active);
+CREATE INDEX idx_users_username_role ON users (username, role);

@@ -10,7 +10,6 @@ const required = [
   'PORT',
   'HOST',
   'SITE_URL',
-  'DATABASE_PATH',
   'JWT_SECRET',
   'INITIAL_PASSWORD',
   'INITIAL_USER_PASSWORD',
@@ -21,6 +20,17 @@ for (const key of required) {
   if (!env[key] || String(env[key]).trim() === '') {
     issues.push(`${key} is not configured.`);
   }
+}
+
+const mysqlConfigured = Boolean(env.DB_HOST || env.DB_NAME || env.DB_USER || env.DB_PASSWORD || env.DB_PORT);
+if (mysqlConfigured) {
+  for (const key of ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']) {
+    if (!env[key] || String(env[key]).trim() === '') {
+      issues.push(`${key} is required when MariaDB/MySQL is enabled.`);
+    }
+  }
+} else if (!env.DATABASE_PATH || String(env.DATABASE_PATH).trim() === '') {
+  issues.push('DATABASE_PATH is required when MariaDB/MySQL is not configured.');
 }
 
 if (String(env.NODE_ENV || '').trim() !== 'production') {
@@ -67,6 +77,8 @@ if (databasePath) {
   }
 }
 
+const databaseType = mysqlConfigured ? 'mysql' : 'sqlite';
+
 const mediaUploadDir = String(env.MEDIA_UPLOAD_DIR || '').trim();
 if (mediaUploadDir) {
   const resolved = path.resolve(mediaUploadDir);
@@ -105,8 +117,9 @@ const report = {
   port: Number(port),
   host,
   site_url: siteUrl,
-  database_path: databasePath,
-  database_directory: path.dirname(path.resolve(databasePath)),
+  database_type: databaseType,
+  database_path: databasePath || 'mysql-configured',
+  database_directory: databasePath ? path.dirname(path.resolve(databasePath)) : 'mysql-managed',
   jwt_secret_configured: Boolean(jwtSecret),
   initial_password_configured: Boolean(env.INITIAL_PASSWORD),
   initial_user_password_configured: Boolean(env.INITIAL_USER_PASSWORD),

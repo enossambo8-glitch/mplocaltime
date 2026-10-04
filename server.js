@@ -10,7 +10,8 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const sanitizeHtml = require('sanitize-html');
-const { init, queueDatabaseOperation } = require('./db');
+const { init, queueDatabaseOperation, isMysqlConfigured } = require('./db');
+const { runMigrations } = require('./server/db/migrations');
 const {
   MUNICIPALITIES,
   getMunicipalityBySlug,
@@ -461,6 +462,11 @@ async function ensureSchemaMigrationsTable(db) {
 
 async function initializeDatabase() {
   return queueDatabaseOperation(async () => {
+    if (isMysqlConfigured()) {
+      await runMigrations();
+      return;
+    }
+
     const db = await init();
     try {
       await ensureSchemaMigrationsTable(db);
