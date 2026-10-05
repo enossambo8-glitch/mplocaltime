@@ -403,29 +403,7 @@ const app = (() => {
     return 'just now';
   };
 
-  const fallbackBreakingStories = [
-    {
-      title: 'Public hearings continue as residents press for stronger service delivery',
-      category: 'Community',
-      submittedAt: new Date(Date.now() - 10 * 60000).toISOString(),
-    },
-    {
-      title: 'Housing projects receive fresh provincial funding support',
-      category: 'Business',
-      submittedAt: new Date(Date.now() - 22 * 60000).toISOString(),
-    },
-    {
-      title: 'Road upgrades continue across municipalities as travel improves',
-      category: 'Infrastructure',
-      submittedAt: new Date(Date.now() - 60 * 60000).toISOString(),
-    },
-    {
-      title: 'Education department launches digital learning initiative',
-      category: 'Education',
-      submittedAt: new Date(Date.now() - 90 * 60000).toISOString(),
-    },
-  ];
-
+  const fallbackBreakingStories = [];
   const fetchLatestStories = async () => {
     const now = Date.now();
     if (latestStoriesCache.data && now - latestStoriesCache.timestamp < 60000) {
@@ -496,6 +474,13 @@ const app = (() => {
       });
 
     const stories = await breakingNewsPromise;
+    if (!Array.isArray(stories) || stories.length === 0) {
+      marquee.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+
+    marquee.style.display = '';
     container.innerHTML = buildMarkup(stories);
 
     const pauseMarquee = () => marquee.classList.add('is-paused');
