@@ -453,10 +453,10 @@ const SCHEMA_MIGRATION_NAME = 'mlt_core_schema_v1';
 async function ensureSchemaMigrationsTable(db) {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      migration_name VARCHAR(255) NOT NULL UNIQUE,
+      executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 }
 
@@ -464,16 +464,78 @@ async function initializeDatabase() {
   return queueDatabaseOperation(async () => {
     if (isMysqlConfigured()) {
       await runMigrations();
+
+      const db = await init();
+      try {
+        if (process.env.NODE_ENV === 'production' && !SEED_DEMO_USERS) {
+          throw new Error('Production startup requires INITIAL_PASSWORD and INITIAL_USER_PASSWORD to be configured.');
+        }
+
+        if (SEED_DEMO_USERS) {
+          const seedUser = async (username, password, bio, avatar, role) => {
+            const existingUser = await db.get(
+              `SELECT id, role, is_active FROM users WHERE username = ?`,
+              [username]
+            );
+
+            if (!existingUser) {
+              const passwordHash = await bcrypt.hash(password, 10);
+              await db.run(
+                `INSERT INTO users (username, password, bio, avatar, role, is_active)
+                 VALUES (?, ?, ?, ?, ?, 1)`,
+                [username, passwordHash, bio, avatar, role]
+              );
+              return;
+            }
+
+            const normalizedRole = normalizeRoleName(existingUser.role, role);
+
+            await db.run(
+              `UPDATE users
+               SET role = ?, bio = ?, avatar = ?, is_active = ?
+               WHERE username = ?`,
+              [
+                normalizedRole,
+                bio,
+                avatar,
+                Number(existingUser.is_active ?? 1),
+                username
+              ]
+            );
+          };
+
+          await seedUser(
+            DEFAULT_ADMIN.username,
+            DEFAULT_ADMIN.passwordEnv,
+            DEFAULT_ADMIN.bio,
+            DEFAULT_ADMIN.avatar,
+            DEFAULT_ADMIN.role
+          );
+
+          await seedUser(
+            DEFAULT_USER.username,
+            DEFAULT_USER.passwordEnv,
+            DEFAULT_USER.bio,
+            DEFAULT_USER.avatar,
+            DEFAULT_USER.role
+          );
+
+          console.log('MariaDB production users seeded successfully.');
+        }
+      } finally {
+        await db.close();
+      }
+
       return;
     }
 
     const db = await init();
     try {
       await ensureSchemaMigrationsTable(db);
-      const migrationExists = await db.get('SELECT 1 FROM schema_migrations WHERE name = ?', [SCHEMA_MIGRATION_NAME]);
+      const migrationExists = await db.get('SELECT 1 FROM schema_migrations WHERE migration_name = ?', [SCHEMA_MIGRATION_NAME]);
 
       if (!migrationExists) {
-        await db.exec('BEGIN IMMEDIATE');
+        await db.exec('START TRANSACTION');
         try {
           await db.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -1387,7 +1449,7 @@ async function initializeDatabase() {
       await db.run(`UPDATE stories SET slug = ? WHERE id = ?`, [generatedSlug, storyMissingSlug.id]);
     }
 
-          await db.run('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)', [SCHEMA_MIGRATION_NAME, new Date().toISOString()]);
+          await db.run('INSERT INTO schema_migrations (migration_name, executed_at) VALUES (?, ?)', [SCHEMA_MIGRATION_NAME, new Date().toISOString()]);
           await db.exec('COMMIT');
         } catch (error) {
           await db.exec('ROLLBACK');
@@ -1501,7 +1563,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use('/public', express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), { index: false, redirect: false }));
+app.use('/uploads/news', express.static(MEDIA_UPLOAD_ROOT, { index: false, redirect: false }));
 
 app.use((req, res, next) => {
   const originalSend = res.send.bind(res);
