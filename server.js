@@ -1562,6 +1562,7 @@ app.use(cors({
   credentials: false
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, "public"), { index: false, redirect: false }));
 app.use(express.static(__dirname, { index: false, redirect: false }));
 app.use('/public', express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
 app.use('/uploads/news', express.static(MEDIA_UPLOAD_ROOT, { index: false, redirect: false }));

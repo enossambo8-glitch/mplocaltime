@@ -167,8 +167,7 @@ const app = (() => {
         ? stories.map(buildStoryCardMarkup).join('')
         : emptyStateMarkup(`No ${category} stories have been published yet. Check back soon.`);
     } catch (error) {
-      // Leave the existing static sample cards in place if the request fails,
-      // so the page is never left blank.
+      container.innerHTML = emptyStateMarkup('News is temporarily unavailable. Please try again shortly.');
     }
   };
 
@@ -185,7 +184,7 @@ const app = (() => {
         ? stories.map(buildStoryCardMarkup).join('')
         : emptyStateMarkup('No published stories are available yet. Check back soon.');
     } catch (error) {
-      // Leave the existing static sample cards in place if the request fails.
+      container.innerHTML = emptyStateMarkup('News is temporarily unavailable. Please try again shortly.');
     }
   };
 
@@ -279,44 +278,7 @@ const app = (() => {
     });
   };
 
-  const fallbackStories = [
-    {
-      title: 'Mpumalanga business leaders back new growth corridor',
-      excerpt: 'New investment and logistics partnerships are raising expectations for entrepreneurs across the Lowveld.',
-      category: 'Business',
-      author: 'Sipho Dlamini',
-      submittedAt: '2026-07-18T08:30:00Z',
-      reading_time: 4,
-      featured_image: 'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1600&q=80',
-    },
-    {
-      title: 'Local arts collective brings a new theatre season to life',
-      excerpt: 'Creative talent from across the province is turning community spaces into vibrant cultural destinations.',
-      category: 'Arts',
-      author: 'Ayanda Mbatha',
-      submittedAt: '2026-07-16T10:00:00Z',
-      reading_time: 3,
-      featured_image: 'https://images.unsplash.com/photo-1499364615650-ec38552f4f34?auto=format&fit=crop&w=1600&q=80',
-    },
-    {
-      title: 'Rugby and school sport programmes gain momentum',
-      excerpt: 'Fresh competition and coaching support are helping schools and clubs build stronger community pride.',
-      category: 'Sports',
-      author: 'Lungisani Ndlovu',
-      submittedAt: '2026-07-15T14:00:00Z',
-      reading_time: 2,
-      featured_image: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=1600&q=80',
-    },
-    {
-      title: 'Community centre expands youth mentorship and food relief',
-      excerpt: 'Volunteers and local leaders are strengthening support networks for families across the municipality.',
-      category: 'Community',
-      author: 'Nokuthula Mkhize',
-      submittedAt: '2026-07-14T12:00:00Z',
-      reading_time: 4,
-      featured_image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1600&q=80',
-    },
-  ];
+  const fallbackStories = [];
 
   const categoryDefinitions = [
     {
