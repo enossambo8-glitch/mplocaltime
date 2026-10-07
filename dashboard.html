@@ -435,7 +435,7 @@
       const canEdit = (isOwner && ['draft', 'changes_requested'].includes(canonicalStatus)) || isEditorial;
       const actionButtons = [];
 
-      if (canEdit && ['draft', 'changes_requested'].includes(canonicalStatus)) {
+      if ((isEditorial && canonicalStatus !== 'archived') || (canEdit && ['draft', 'changes_requested'].includes(canonicalStatus))) {
         actionButtons.push(`<button class="btn small" type="button" data-action="edit" data-id="${story.id}">Edit</button>`);
       }
 
@@ -634,6 +634,7 @@
 
     function populateStoryForm(story) {
       storyForm.dataset.storyId = String(story.id);
+      storyForm.dataset.storyStatus = story.status || 'draft';
       storyForm.elements.title.value = story.title || '';
       storyForm.elements.category.value = story.category || 'News';
       storyForm.elements.slug.value = story.slug || '';
@@ -641,7 +642,7 @@
       storyForm.elements.content.value = story.content || '';
       const submitButtonLabel = storyForm.querySelector('button[type="submit"]');
       if (submitButtonLabel) {
-        submitButtonLabel.textContent = 'Update draft';
+        submitButtonLabel.textContent = story.status === 'published' ? 'Update article' : 'Update draft';
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -739,9 +740,9 @@
           const response = await fetchJson(`/api/stories/${storyForm.dataset.storyId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...payload, status: 'draft' }),
+            body: JSON.stringify({ ...payload, status: storyForm.dataset.storyStatus || 'draft' }),
           });
-          setBanner(`Draft updated: ${response.story?.title || 'story'}.`, 'success');
+          setBanner(`Article updated: ${response.story?.title || 'story'}.`, 'success');
         } else {
           const response = await fetchJson('/api/stories', {
             method: 'POST',
@@ -752,6 +753,7 @@
         }
         storyForm.reset();
         delete storyForm.dataset.storyId;
+        delete storyForm.dataset.storyStatus;
         const submitButtonLabel = storyForm.querySelector('button[type="submit"]');
         if (submitButtonLabel) {
           submitButtonLabel.textContent = 'Save draft';
@@ -870,8 +872,8 @@
 
       try {
         if (action === 'edit') {
-          const story = await fetchJson(`/api/stories?status=draft,changes_requested&limit=100&page=1`);
-          const row = Array.isArray(story.stories) ? story.stories.find((item) => String(item.id) === String(id)) : null;
+          const story = await fetchJson(`/api/stories/${id}`);
+          const row = story.story || story;
           if (!row) throw new Error('Story not found for editing.');
           populateStoryForm(row);
           setBanner(`Editing ${row.title || 'story'} in the newsroom form.`, 'info');

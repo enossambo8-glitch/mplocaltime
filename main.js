@@ -376,7 +376,7 @@ const app = (() => {
       return latestStoriesPromise;
     }
 
-    latestStoriesPromise = fetch('/api/latest-stories')
+    latestStoriesPromise = fetch('/api/latest-stories?limit=20')
       .then(async (response) => {
         const payload = await response.json();
         const stories = Array.isArray(payload.stories) && payload.stories.length ? payload.stories : fallbackStories;
@@ -401,7 +401,7 @@ const app = (() => {
       const rest = stories.slice(1);
       const featuredMarkup = `
         <a class="breaking-news-feature" href="${storyHref(featured)}" aria-label="${escapeHTML(featured.title)} ${escapeHTML(featured.category)} ${escapeHTML(formatRelativeTime(featured.submittedAt))}">
-          <span class="breaking-news-feature-label">LIVE</span>
+          <span class="breaking-news-feature-label">LATEST</span>
           <span class="breaking-news-feature-title">${escapeHTML(featured.title)}</span>
           <span class="breaking-news-feature-meta">${escapeHTML(featured.category)} • ${escapeHTML(formatRelativeTime(featured.submittedAt))}</span>
         </a>`;
@@ -423,7 +423,7 @@ const app = (() => {
 
     if (breakingNewsPromise) return breakingNewsPromise;
 
-    breakingNewsPromise = fetch('/api/breaking-news')
+    breakingNewsPromise = fetch('/api/latest-stories?limit=10')
       .then(async (response) => {
         const payload = await response.json();
         const stories = Array.isArray(payload.stories) && payload.stories.length ? payload.stories : fallbackBreakingStories;
@@ -447,6 +447,7 @@ const app = (() => {
 
     const pauseMarquee = () => marquee.classList.add('is-paused');
     const resumeMarquee = () => marquee.classList.remove('is-paused');
+
     marquee.onmouseenter = pauseMarquee;
     marquee.onmouseleave = resumeMarquee;
     marquee.onfocusin = pauseMarquee;
@@ -492,82 +493,103 @@ const app = (() => {
 
   const initHeroSlider = async () => {
     const container = utils.qs('#heroSlides');
-    const dots = utils.qs('#heroDots');
     if (!container) return [];
 
     try {
-      const latestRes = await fetch('/api/latest-stories?limit=4');
+      const latestRes = await fetch('/api/latest-stories?limit=9');
       const latestData = await latestRes.json();
-      const stories = latestData.stories?.length ? latestData.stories : fallbackStories;
-      const slides = stories.slice(0, 4).map((story, index) => normalizeStory(story, index));
-      heroStoryIds = slides.map(slide => slide.id);
 
-      if (!slides.length) {
-        container.innerHTML = '<div class="hero-slide"><div class="hero-slide-content"><p class="section-kicker">Latest news</p><h2>Local reporting continues to grow.</h2></div></div>';
+      const stories = (latestData.stories || [])
+        .filter(isPublishedStory)
+        .slice(0, 9)
+        .map((story, index) => normalizeStory(story, index));
+
+      if (!stories.length) {
+        container.innerHTML =
+          '<div class="hero-grid-empty">No stories available right now.</div>';
         return [];
       }
 
-      let index = 0;
-      const render = () => {
-        const slide = slides[index];
-        const total = slides.length;
-        container.innerHTML = `
-          <article class="hero-slide" style="background-image:url('${slide.image}')">
-            <div class="hero-slide-content">
-              <div class="hero-slide-top">
-                <p class="section-kicker">Latest news</p>
-                <span class="hero-slide-counter">${index + 1}/${total}</span>
-              </div>
-              <p class="hero-slide-category">${escapeHTML(slide.category)}</p>
-              <h2>${escapeHTML(slide.title)}</h2>
-              <p>${escapeHTML(slide.excerpt)}</p>
-              <div class="hero-slide-meta">
-                <span>By ${escapeHTML(slide.author)}</span>
-                <span>•</span>
-                <span>${escapeHTML(slide.date)}</span>
-                <span>•</span>
-                <span>${slide.readingTime} min read</span>
-              </div>
-            </div>
-          </article>`;
-        dots.innerHTML = slides.map((_, i) => `<button type="button" class="${i === index ? 'active' : ''}" data-index="${i}" aria-label="Go to slide ${i + 1}"></button>`).join('');
-      };
+      // Latest five rotate in the large left panel.
+      const sliderStories = stories.slice(0, 5);
 
-      const onNav = (direction) => {
-        index = (index + direction + slides.length) % slides.length;
-        render();
-      };
+      // Four additional stories remain fixed on the right.
+      const sideStories = stories.slice(5, 9);
 
-      render();
-      utils.qsa('.hero-nav').forEach(button => utils.on(button, 'click', () => onNav(Number(button.dataset.direction))));
-      utils.qsa('.hero-dots button').forEach(button => utils.on(button, 'click', () => {
-        index = Number(button.dataset.index);
-        render();
-      }));
-      // Respect the user's reduced-motion preference by never auto-advancing;
-      // the prev/next buttons and dots remain fully usable either way.
-      const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (!prefersReducedMotion) {
-        setInterval(() => onNav(1), 7000);
+      // If fewer than nine stories are available, reuse remaining latest
+      // stories so the four-card layout stays complete.
+      while (sideStories.length < 4 && stories.length > 1) {
+        const candidate = stories[(5 + sideStories.length) % stories.length];
+        if (candidate) sideStories.push(candidate);
+        else break;
       }
-      return slides.map(slide => slide.id);
-    } catch (error) {
-      console.error('Error loading hero slider:', error);
-      const slides = fallbackStories.slice(0, 4).map((story, index) => normalizeStory(story, index));
-      container.innerHTML = `
-        <article class="hero-slide" style="background-image:url('${slides[0].image}')">
-          <div class="hero-slide-content">
-            <div class="hero-slide-top">
-              <p class="section-kicker">Latest news</p>
-              <span class="hero-slide-counter">1/${slides.length}</span>
+
+      heroStoryIds = stories.map(story => story.id);
+
+      const storyUrl = (story) =>
+        `/story/${encodeURIComponent(story.slug || story.id || '')}`;
+
+      const renderSideCards = () => sideStories.map(story => `
+        <a class="hero-grid-card"
+           href="${storyUrl(story)}"
+           style="background-image:url('${story.image}')">
+          <div class="hero-grid-overlay"></div>
+          <div class="hero-grid-content">
+            <h2>${escapeHTML(story.title)}</h2>
+            <div class="hero-grid-meta">
+              <span>${escapeHTML(story.date)}</span>
             </div>
-            <p class="hero-slide-category">${escapeHTML(slides[0].category)}</p>
-            <h2>${escapeHTML(slides[0].title)}</h2>
-            <p>${escapeHTML(slides[0].excerpt)}</p>
           </div>
-        </article>`;
+        </a>
+      `).join('');
+
+      container.innerHTML = `
+        <div id="heroLeadSlider" class="hero-lead-slider"></div>
+        <div class="hero-grid-secondary">
+          ${renderSideCards()}
+        </div>
+      `;
+
+      const leadContainer = utils.qs('#heroLeadSlider');
+      let current = 0;
+
+      const renderLead = () => {
+        const story = sliderStories[current];
+
+        leadContainer.innerHTML = `
+          <a class="hero-grid-lead hero-grid-lead-slide"
+             href="${storyUrl(story)}"
+             style="background-image:url('${story.image}')">
+            <div class="hero-grid-overlay"></div>
+            <div class="hero-grid-content">
+              <h1>${escapeHTML(story.title)}</h1>
+              <div class="hero-grid-meta">
+                <span>${escapeHTML(story.date)}</span>
+                <span>•</span>
+                <span>${escapeHTML(story.author)}</span>
+              </div>
+            </div>
+          </a>
+        `;
+      };
+
+      renderLead();
+
+      if (sliderStories.length > 1) {
+        setInterval(() => {
+          current = (current + 1) % sliderStories.length;
+          renderLead();
+        }, 2000);
+      }
+
+      return heroStoryIds;
+
+    } catch (error) {
+      console.error('Error loading hero stories:', error);
+      container.innerHTML =
+        '<div class="hero-grid-empty">Latest stories are temporarily unavailable.</div>';
+      return [];
     }
-    return [];
   };
 
   const getCategoryStories = (stories, categoryId, excludedIds = []) => {
@@ -591,86 +613,208 @@ const app = (() => {
     const container = utils.qs('#categoryNewsGrid');
     if (!container) return;
 
-    const stories = await fetchLatestStories();
-    const markup = categoryDefinitions.map((category) => {
-      const categoryStories = getCategoryStories(stories, category.id, excludedIds);
-      const featuredStory = categoryStories[0] || null;
-      const supportingStories = categoryStories.slice(1, 5);
-      const sidebarWidgets = [
-        { title: 'Advertisement', body: 'Premium sponsor placement for local businesses and campaigns.' },
-        { title: 'Sponsored story', body: 'Featured partner content that complements the main report.' },
-        { title: 'Featured artist', body: 'A spotlight on the creative economy and cultural programming.' },
-      ];
+    const rawStories = await fetchLatestStories();
+
+    const stories = rawStories
+      .filter(isPublishedStory)
+      .map((story, index) => ({
+        ...normalizeStory(story, index),
+        slug: story.slug || '',
+      }));
+
+    if (!stories.length) {
+      container.innerHTML =
+        '<p class="daily-brief-empty">No additional stories are available right now.</p>';
+      return;
+    }
+
+    const newsStories = stories
+      .filter((story) => normalizeCategory(story.category) === 'news')
+      .slice(0, 5);
+
+    // If there are not enough stories explicitly categorised as News,
+    // fill the main news area with the latest published stories.
+    const mainStories = [...newsStories];
+
+    for (const story of stories) {
+      if (mainStories.length >= 5) break;
+      if (!mainStories.some((item) => item.id === story.id)) {
+        mainStories.push(story);
+      }
+    }
+
+    const featured = mainStories[0] || null;
+    const supporting = mainStories.slice(1, 5);
+
+    const categoryCards = categoryDefinitions.map((category) => {
+      const story = stories.find(
+        (item) => normalizeCategory(item.category) === category.id
+      );
+
+      if (!story) return '';
 
       return `
-        <article class="category-panel ${category.accentClass}" aria-labelledby="${category.id}-title">
-          <div class="category-panel-top">
-            <a class="category-panel-head" href="${category.href}" aria-label="Open ${escapeHTML(category.title)} stories">
-              <div class="category-panel-heading">
-                <span class="category-icon" aria-hidden="true">${category.icon}</span>
-                <div>
-                  <h3 id="${category.id}-title" class="category-panel-title">${escapeHTML(category.title)}</h3>
-                  <p class="category-panel-description">${escapeHTML(category.description)}</p>
+        <a class="daily-category-card"
+           href="${storyHref(story)}"
+           aria-label="${escapeHTML(story.title)}">
+          <div class="daily-category-image">
+            <img src="${story.image}"
+                 alt="${escapeHTML(story.title)}"
+                 loading="lazy"
+                 decoding="async">
+          </div>
+
+          <div class="daily-category-copy">
+            <span class="daily-category-label">${escapeHTML(category.title)}</span>
+            <h3>${escapeHTML(story.title)}</h3>
+            <span class="daily-category-date">${escapeHTML(story.date)}</span>
+          </div>
+        </a>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="daily-brief-layout">
+
+        <section class="daily-news-column" aria-label="Latest news">
+          <div class="daily-section-heading">
+            <h2>News</h2>
+            <a href="/news.html">View all</a>
+          </div>
+
+          ${featured ? `
+            <a class="daily-feature-story"
+               href="${storyHref(featured)}"
+               aria-label="${escapeHTML(featured.title)}">
+
+              <img src="${featured.image}"
+                   alt="${escapeHTML(featured.title)}"
+                   loading="lazy"
+                   decoding="async">
+
+              <div class="daily-feature-copy">
+                <span class="daily-category-label">${escapeHTML(featured.category)}</span>
+                <h3>${escapeHTML(featured.title)}</h3>
+                <p>${escapeHTML(featured.excerpt)}</p>
+                <div class="daily-story-meta">
+                  <span>${escapeHTML(featured.date)}</span>
+                  <span>By ${escapeHTML(featured.author)}</span>
                 </div>
               </div>
             </a>
-            <span class="section-pill">${escapeHTML(category.title)}</span>
+          ` : ''}
+
+          <div class="daily-news-list">
+            ${supporting.map((story) => `
+              <a class="daily-news-item"
+                 href="${storyHref(story)}"
+                 aria-label="${escapeHTML(story.title)}">
+
+                <img src="${story.image}"
+                     alt="${escapeHTML(story.title)}"
+                     loading="lazy"
+                     decoding="async">
+
+                <div>
+                  <span class="daily-category-label">${escapeHTML(story.category)}</span>
+                  <h3>${escapeHTML(story.title)}</h3>
+                  <span class="daily-category-date">${escapeHTML(story.date)}</span>
+                </div>
+              </a>
+            `).join('')}
+          </div>
+        </section>
+
+        <aside class="daily-category-column" aria-label="Latest by category">
+          <div class="daily-section-heading">
+            <h2>Latest by Category</h2>
           </div>
 
-          <div class="category-panel-layout">
-            <div class="category-panel-main">
-              ${featuredStory ? `
-                <a class="premium-feature-card" href="${storyHref(featuredStory)}" aria-label="${escapeHTML(featuredStory.title)}">
-                  <img src="${featuredStory.image}" alt="${escapeHTML(featuredStory.title)}" loading="lazy" decoding="async" sizes="(max-width: 768px) 100vw, 40vw">
-                  <div class="premium-feature-card-body">
-                    <div class="premium-topline">
-                      <span class="premium-badge">Featured</span>
-                      <span class="premium-meta">${escapeHTML(featuredStory.date)}</span>
-                    </div>
-                    <h4>${escapeHTML(featuredStory.title)}</h4>
-                    <p>${escapeHTML(featuredStory.excerpt)}</p>
-                    <div class="premium-story-footer">
-                      <div class="premium-story-details">
-                        <span>By ${escapeHTML(featuredStory.author)}</span>
-                        <span>${featuredStory.readingTime} min</span>
-                        <span>${featuredStory.views || 0} views</span>
-                        <span>${featuredStory.comments || 0} comments</span>
-                      </div>
-                    </div>
-                  </div>
-                </a>
-              ` : ''}
+          <div class="daily-category-list">
+            ${categoryCards}
+          </div>
+        </aside>
 
-              <div class="premium-supporting-grid">
+      </div>
+    `;
+
+    const extraContainer = utils.qs('#homepageCategorySections');
+
+    if (extraContainer) {
+      const homepageCategories = [
+        { id: 'news', title: 'News', href: '/news.html' },
+        { id: 'business', title: 'Business', href: '/business.html' },
+        { id: 'arts', title: 'Arts', href: '/arts.html' },
+        { id: 'sports', title: 'Sports', href: '/sports.html' },
+        { id: 'community', title: 'Community', href: '/community.html' },
+      ];
+
+      const categorySections = homepageCategories.map((category) => {
+        const categoryStories = stories
+          .filter((story) => normalizeCategory(story.category) === category.id)
+          .slice(0, 4);
+
+        if (!categoryStories.length) return '';
+
+        const lead = categoryStories[0];
+        const supportingStories = categoryStories.slice(1);
+
+        return `
+          <section class="homepage-category-block" aria-label="${escapeHTML(category.title)}">
+            <div class="daily-section-heading">
+              <h2>${escapeHTML(category.title)}</h2>
+              <a href="${category.href}">View all</a>
+            </div>
+
+            <div class="homepage-category-layout">
+              <a class="daily-feature-story homepage-category-feature"
+                 href="${storyHref(lead)}"
+                 aria-label="${escapeHTML(lead.title)}">
+
+                <img src="${lead.image}"
+                     alt="${escapeHTML(lead.title)}"
+                     loading="lazy"
+                     decoding="async">
+
+                <div class="daily-feature-copy">
+                  <span class="daily-category-label">${escapeHTML(category.title)}</span>
+                  <h3>${escapeHTML(lead.title)}</h3>
+                  <p>${escapeHTML(lead.excerpt)}</p>
+
+                  <div class="daily-story-meta">
+                    <span>${escapeHTML(lead.date)}</span>
+                    <span>By ${escapeHTML(lead.author)}</span>
+                  </div>
+                </div>
+              </a>
+
+              <div class="daily-news-list homepage-category-list">
                 ${supportingStories.map((story) => `
-                  <a class="premium-story-card" href="${storyHref(story)}" data-search="${escapeHTML(story.title)} ${escapeHTML(story.category)}" aria-label="${escapeHTML(story.title)}">
-                    <div class="premium-story-card-body">
-                      <div class="premium-topline">
-                        <span class="premium-badge">${escapeHTML(story.category)}</span>
-                        <span class="premium-meta">${escapeHTML(story.date)}</span>
-                      </div>
-                      <h4>${escapeHTML(story.title)}</h4>
-                      <p>${escapeHTML(story.excerpt)}</p>
+                  <a class="daily-news-item"
+                     href="${storyHref(story)}"
+                     aria-label="${escapeHTML(story.title)}">
+
+                    <img src="${story.image}"
+                         alt="${escapeHTML(story.title)}"
+                         loading="lazy"
+                         decoding="async">
+
+                    <div>
+                      <span class="daily-category-label">${escapeHTML(category.title)}</span>
+                      <h3>${escapeHTML(story.title)}</h3>
+                      <span class="daily-category-date">${escapeHTML(story.date)} • By ${escapeHTML(story.author)}</span>
                     </div>
                   </a>
                 `).join('')}
               </div>
             </div>
+          </section>
+        `;
+      }).join('');
 
-            <aside class="category-panel-sidebar">
-              ${sidebarWidgets.map((widget) => `
-                <div class="sidebar-widget">
-                  <div class="sidebar-widget-label">${escapeHTML(widget.title)}</div>
-                  <p>${escapeHTML(widget.body)}</p>
-                </div>
-              `).join('')}
-            </aside>
-          </div>
-        </article>
-      `;
-    }).join('');
+      extraContainer.innerHTML = categorySections;
+    }
 
-    container.innerHTML = markup;
     initShare();
   };
 

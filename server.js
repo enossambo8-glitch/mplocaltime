@@ -1898,6 +1898,7 @@ app.get('/sitemap.xml', async (req, res) => {
       { loc: '/' },
       { loc: '/news.html' },
       { loc: '/business.html' },
+      { loc: '/arts.html' },
       { loc: '/community.html' },
       { loc: '/sports.html' },
       { loc: '/municipalities' },
@@ -1966,7 +1967,6 @@ app.get('/robots.txt', (req, res) => {
     'Disallow: /login.html',
     '',
     `Sitemap: ${buildUrl('/sitemap.xml')}`,
-    `Sitemap: ${buildUrl('/news-sitemap.xml')}`,
   ];
   res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
@@ -4904,6 +4904,44 @@ app.get('/api/stories/:id', async (req, res) => {
   });
 });
 
+// Redirect former WordPress per-article feed URLs to the canonical article.
+app.get("/:slug/feed/", async (req, res, next) => {
+  const slug = String(req.params.slug || "").trim();
+
+  if (!slug || slug.includes(".")) return next();
+
+  return withDB(async (db) => {
+    const story = await db.get(
+      `SELECT s.slug FROM stories s WHERE s.slug = ? AND ${publicStoryWhereClause("s")} LIMIT 1`,
+      [slug, nowISO()]
+    );
+
+    if (!story) return next();
+
+    return res.redirect(301, `/story/${encodeURIComponent(story.slug)}`);
+  });
+});
+
+// Preserve SEO value from the former WordPress article URLs.
+// If a root-level slug matches a published story, permanently redirect it
+// to the canonical /story/<slug> URL.
+app.get('/:slug', async (req, res, next) => {
+  const slug = String(req.params.slug || '').trim();
+
+  if (!slug || slug.includes('.') || slug === 'story') return next();
+
+  return withDB(async (db) => {
+    const story = await db.get(
+      `SELECT s.slug FROM stories s WHERE s.slug = ? AND ${publicStoryWhereClause('s')} LIMIT 1`,
+      [slug, nowISO()]
+    );
+
+    if (!story) return next();
+
+    return res.redirect(301, `/story/${encodeURIComponent(story.slug)}`);
+  });
+});
+
 // Serve a rendered article page for story details. Accepts either a numeric
 // story id or a stable slug so legacy links keep working while new links can
 // use the public, human-readable slug URL.
@@ -5102,10 +5140,93 @@ app.get('/story/:id', async (req, res) => {
     .article-featured { width:100%; min-height:420px; background-size:cover; background-position:center; border-radius:12px; margin-bottom:24px; }
     .article-title { font-size:clamp(2.2rem, 2.3vw, 3rem); margin:0 0 14px; line-height:1.05; }
     .cm-below-entry-meta, .article-meta { display:flex; flex-wrap:wrap; gap:.75rem; color:#555; font-size:.95rem; margin-bottom:22px; }
-    .article-content { line-height:1.84; color:#333; }
-    .article-content p { margin:1.6em 0; font-size:1.07rem; }
-    .article-content img { max-width:100%; height:auto; border-radius:12px; margin:1.5em 0; }
-    .article-content a { color:#c00; text-decoration:underline; }
+    .article-content {
+      line-height:1.8;
+      color:#333;
+      text-align:justify;
+      text-justify:inter-word;
+      overflow-wrap:break-word;
+    }
+
+    .article-content p {
+      margin:0 0 1.35em;
+      font-size:1.07rem;
+      line-height:1.8;
+      text-align:justify;
+      text-justify:inter-word;
+    }
+
+    .article-content h2 {
+      margin:2em 0 .75em;
+      font-size:1.65rem;
+      line-height:1.25;
+      font-weight:700;
+      color:#111;
+      text-align:left;
+    }
+
+    .article-content h3 {
+      margin:1.7em 0 .65em;
+      font-size:1.3rem;
+      line-height:1.3;
+      font-weight:700;
+      color:#111;
+      text-align:left;
+    }
+
+    .article-content ul,
+    .article-content ol {
+      margin:1em 0 1.5em;
+      padding-left:1.5em;
+      text-align:left;
+    }
+
+    .article-content li {
+      margin:.55em 0;
+      line-height:1.65;
+    }
+
+    .article-content blockquote {
+      margin:1.8em 0;
+      padding:12px 20px;
+      border-left:4px solid #c00;
+      font-size:1.08rem;
+      line-height:1.7;
+      font-style:italic;
+      text-align:left;
+    }
+
+    .article-content img {
+      max-width:100%;
+      height:auto;
+      border-radius:12px;
+      margin:1.5em 0;
+    }
+
+    .article-content a {
+      color:#c00;
+      text-decoration:underline;
+    }
+
+    @media (max-width:620px) {
+      .article-content,
+      .article-content p {
+        text-align:left;
+      }
+
+      .article-content p {
+        font-size:1rem;
+        line-height:1.7;
+      }
+
+      .article-content h2 {
+        font-size:1.4rem;
+      }
+
+      .article-content h3 {
+        font-size:1.2rem;
+      }
+    }
     .article-author-box { display:flex; gap:18px; align-items:flex-start; background:#faf9f7; padding:20px; border-radius:16px; margin:28px 0; }
     .author-avatar { width:72px; height:72px; border-radius:50%; overflow:hidden; flex-shrink:0; border:1px solid #eee; }
     .author-avatar img { width:100%; height:100%; object-fit:cover; }
@@ -5212,20 +5333,12 @@ app.get('/story/:id', async (req, res) => {
                     <span class="cm-author cm-vcard"><a class="url fn n" href="/">${escapeHtml(s.author || 'admin')}</a></span>
                     <span class="cm-post-views">${s.views || 0} Views</span>
                   </div>
-                  ${updatedNoticeHtml}
-                  <div class="article-author-box">
-                    <div class="author-avatar"><img src="${escapeHtml(authorAvatar)}" alt="${escapeHtml(s.author || 'Author')}" /></div>
-                    <div class="author-meta">
-                      <p class="author-byline">By <strong>${escapeHtml(s.author || 'Mpumalanga Local Time')}</strong></p>
-                      <p class="author-description">${authorDescription}</p>
-                    </div>
-                  </div>
+                  <div class="cm-entry-summary article-content">${contentHtml}</div>
                   <div class="article-share">
                     <button type="button" class="share-button" data-article-share="copy" data-url="${escapeHtml(shareUrl)}">Copy link</button>
                     <button type="button" class="share-button" data-article-share="twitter" data-url="${escapeHtml(shareUrl)}" data-text="${escapeHtml(title)}">Tweet</button>
                     <button type="button" class="share-button" data-article-share="facebook" data-url="${escapeHtml(shareUrl)}">Facebook</button>
                   </div>
-                  <div class="cm-entry-summary article-content">${contentHtml}</div>
                   <div class="ad-slot" data-ad-slot="article_top" aria-label="Advertisement"></div>
                   ${tagsHtml}
                 </div>

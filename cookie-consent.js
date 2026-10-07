@@ -21,7 +21,7 @@
     storageKey: 'mplocal_cookie_consent_v1',
     ga4Id: '',
     gtmId: '',
-    policyUrl: '/privacy',
+    policyUrl: '/privacy-policy.html',
     companyName: '',
     rootSelector: '#cookie-consent-root'
   };
@@ -103,9 +103,9 @@
 
     const content = document.createElement('div');
     content.className = 'cc-content';
-    const title = document.createElement('p'); title.className='cc-title'; title.textContent = `We use cookies to improve your experience on our site.`;
+    const title = document.createElement('p'); title.className='cc-title'; title.textContent = `Your privacy choices matter.`;
     const text = document.createElement('p'); text.className='cc-text';
-    text.innerHTML = `By using our site, you consent to cookies. <a class="cc-link" href="${cfg.policyUrl}" target="_blank" rel="noopener">Learn More</a>`;
+    text.innerHTML = `We use necessary cookies to operate this site. With your permission, we also use analytics and advertising cookies. <a class="cc-link" href="${cfg.policyUrl}" target="_blank" rel="noopener">Privacy Policy</a>`;
     content.appendChild(title); content.appendChild(text);
 
     const actions = document.createElement('div'); actions.className='cc-actions';
