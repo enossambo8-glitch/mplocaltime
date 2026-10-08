@@ -5622,6 +5622,9 @@ if (require.main === module) {
           await db.close();
         }
       })
+      .finally(async () => {
+        await require("./server/db/pool").closePool();
+      })
       .catch((error) => {
         console.error('Scheduled publication processing failed:', error);
         process.exit(1);

@@ -56,9 +56,17 @@ function createPool() {
   return pool;
 }
 
+async function closePool() {
+  if (!pool) return;
+  const activePool = pool;
+  pool = undefined;
+  await activePool.end();
+}
+
 module.exports = {
   getEnvironment,
   isMysqlConfigured,
   validateMysqlConfig,
   createPool,
+  closePool,
 };
