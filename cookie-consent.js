@@ -49,6 +49,15 @@
     return safeParse(localStorage.getItem(cfg.storageKey), null);
   }
 
+  // Establish denied consent before Google tags execute.
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = window.gtag || function(){ window.dataLayer.push(arguments); };
+  window.gtag('consent', 'default', {
+    analytics_storage: 'denied',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied'
+  });
   // Apply Google Consent Mode v2 update
   function applyGoogleConsent(){
     const consentUpdate = {

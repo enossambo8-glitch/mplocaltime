@@ -54,3 +54,6 @@
   .cc-text{font-size:0.9rem}
   .cc-actions{flex-direction:column;align-items:flex-end}
 }
+
+/* Allow Cookie Settings button to receive clicks */
+#cookie-consent-root .cc-settings { pointer-events: auto; }

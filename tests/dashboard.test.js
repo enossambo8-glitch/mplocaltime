@@ -149,6 +149,13 @@ test('role-aware newsroom access behaves according to the server role source of 
     assert.equal(adminOverview.status, 200);
     assert.equal(adminPayload.role, 'admin');
     assert.equal(typeof adminPayload.overview.newsroom?.draft, 'number');
+
+    const restore = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/users/2/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ role: 'journalist' }),
+    });
+    assert.equal(restore.status, 200);
   } finally {
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }

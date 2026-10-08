@@ -98,9 +98,33 @@ function getAdsenseScriptTag() {
 
 function injectAdsenseScriptIntoHtml(html) {
   if (typeof html !== 'string' || !html.includes('</head>')) return html;
+  if (html.includes('id="cookie-consent-root"') &&
+      html.includes('src="/cookie-consent.js"')) return html;
+  const consentHead = `<link rel="stylesheet" href="/cookie-banner.css">
+<script>
+window.dataLayer = window.dataLayer || [];
+window.gtag = window.gtag || function(){window.dataLayer.push(arguments);};
+window.gtag('consent','default',{
+  analytics_storage:'denied',
+  ad_storage:'denied',
+  ad_user_data:'denied',
+  ad_personalization:'denied'
+});
+</script>`;
   const scriptTag = getAdsenseScriptTag();
-  if (!scriptTag) return html;
-  return html.replace(/<\/head>/i, `${scriptTag}\n</head>`);
+  let result = html.replace(/<\/head>/i, `${consentHead}\n${scriptTag}\n</head>`);
+  if (!result.includes('id="cookie-consent-root"') && /<\/body>/i.test(result)) {
+    result = result.replace(/<\/body>/i, `<div id="cookie-consent-root"></div>
+<script src="/cookie-consent.js"></script>
+<script>
+CookieConsent.init({
+  companyName: 'Mpumalanga Local Time',
+  policyUrl: '/privacy-policy.html'
+});
+</script>
+</body>`);
+  }
+  return result;
 }
 
 function sendHtmlFileWithAdsense(res, filePath) {
@@ -453,10 +477,10 @@ const SCHEMA_MIGRATION_NAME = 'mlt_core_schema_v1';
 async function ensureSchemaMigrationsTable(db) {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      migration_name VARCHAR(255) NOT NULL UNIQUE,
-      executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      migration_name TEXT NOT NULL UNIQUE,
+      executed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 }
 
@@ -535,7 +559,7 @@ async function initializeDatabase() {
       const migrationExists = await db.get('SELECT 1 FROM schema_migrations WHERE migration_name = ?', [SCHEMA_MIGRATION_NAME]);
 
       if (!migrationExists) {
-        await db.exec('START TRANSACTION');
+        await db.exec('BEGIN TRANSACTION');
         try {
           await db.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -2987,7 +3011,7 @@ async function authMiddleware(req, res, next) {
       req.user = {
         id: Number(user.id),
         username: user.username,
-        role: normalizeRoleName(data?.role || user.role, 'user'),
+        role: normalizeRoleName(user.role, 'user'),
         bio: user.bio || '',
         avatar: user.avatar || '/logo.png',
         is_active: isActiveAccount(user.is_active),
@@ -3640,8 +3664,8 @@ app.post('/api/stories', authMiddleware, requireRole('admin', 'editor', 'journal
   return withDB(async (db) => {
     try {
       const now = new Date().toISOString();
-      const requestedStatus = normalizeCanonicalStoryStatus(payload.status || 'draft');
-      const safeStatus = requestedStatus === 'published' || requestedStatus === 'archived' ? 'draft' : requestedStatus;
+      // New articles must enter the editorial workflow as drafts.
+      const safeStatus = 'draft';
       const location = await resolveStoryLocation(db, payload, {});
       const slug = await makeUniqueStorySlug(db, payload.slug, payload.title);
       const result = await db.run(`
@@ -3990,7 +4014,7 @@ app.post('/api/editorial/stories/:id/publish', authMiddleware, requireRole('admi
   return withDB(async (db) => {
     const story = await db.get(`SELECT s.*, u.username as author FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE s.id = ?`, [id]);
     if (!story) return res.status(404).json({ error: 'story not found' });
-    const targetStatus = normalizeCanonicalStoryStatus(req.body?.status || 'published');
+    const targetStatus = normalizeCanonicalStoryStatus('published');
     const transition = ensureWorkflowTransition(story.status || 'draft', targetStatus);
     if (!transition.valid) {
       return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
@@ -4212,7 +4236,14 @@ app.post('/api/stories/:id/editorial-review', authMiddleware, requireRole('admin
       in_review: 'in_review',
       approved: 'approved',
     };
+    if (['publish', 'schedule'].includes(action)) return res.status(400).json({ error: 'Use dedicated publishing or scheduling endpoint' });
     const canonicalStatus = normalizeCanonicalStoryStatus(statusMap[action] || 'approved');
+    const role = getRoleNameForRequest(req);
+    const finalEditorialStatuses = new Set(['approved', 'scheduled', 'published']);
+    if (finalEditorialStatuses.has(canonicalStatus) && !['admin', 'editor'].includes(role)) {
+      return res.status(403).json({ error: 'editor or administrator approval required' });
+    }
+
     const transition = ensureWorkflowTransition(existing.status || 'draft', canonicalStatus);
     if (!transition.valid) {
       return res.status(409).json({ error: `invalid transition: ${transition.current} -> ${transition.next}` });
@@ -4953,6 +4984,9 @@ app.get('/story/:id', async (req, res) => {
     const now = nowISO();
     const s = await db.get(`SELECT s.*, u.username as author, u.bio as author_bio, u.avatar as author_avatar FROM stories s LEFT JOIN users u ON u.id = s.author_id WHERE ${lookupClause} AND ${publicStoryWhereClause('s')}`, [idParam, now]);
     if (!s) return res.status(404).send('Article not found');
+    if (isNumericId && s.slug) {
+      return res.redirect(301, `/story/${encodeURIComponent(s.slug)}`);
+    }
     const id = s.id;
     await db.run(`UPDATE stories SET views = COALESCE(views,0) + 1 WHERE id = ?`, [id]);
     const comments = await db.all(`SELECT author_name as author, text, created_at as at FROM comments WHERE story_id = ? ORDER BY id DESC`, [id]);
