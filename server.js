@@ -3499,8 +3499,9 @@ async function processScheduledStories({ db: providedDb, now = new Date(), actor
 }
 
 async function recordWorkflowAudit(db, storyId, action, notes = '', previousStatus = null, nextStatus = null, actorId = null) {
-  const list = await db.all('PRAGMA table_info(revision_history)');
-  const columnNames = list.map((column) => column.name);
+  const columnNames = isMysqlConfigured()
+    ? (await db.all("SHOW COLUMNS FROM revision_history")).map((column) => column.Field)
+    : (await db.all("PRAGMA table_info(revision_history)")).map((column) => column.name);
   const values = [storyId, action, notes || '', new Date().toISOString()];
   const columns = ['story_id', 'action', 'notes', 'created_at'];
   if (columnNames.includes('actor_id')) {

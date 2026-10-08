@@ -7,6 +7,7 @@ function getEnvironment(key, fallback = '') {
 }
 
 function isMysqlConfigured() {
+  if (process.env.NODE_ENV === "test") return false;
   return Boolean(
     getEnvironment('DB_HOST') ||
     getEnvironment('DB_NAME') ||
