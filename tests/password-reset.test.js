@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-local';
@@ -10,6 +13,50 @@ delete require.cache[require.resolve('../server')];
 delete require.cache[require.resolve('../db')];
 const app = require('../server');
 const dbModule = require('../db');
+
+function loadResetPasswordPage({ fetchResponse }) {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'reset-password.html'), 'utf8');
+  const script = html.match(/<script>\s*(const token[\s\S]*?)\s*<\/script>/)[1];
+  const button = { disabled: false };
+  const message = { textContent: '' };
+  const form = {
+    addEventListener(event, handler) {
+      assert.equal(event, 'submit');
+      this.submitHandler = handler;
+    },
+    querySelector(selector) {
+      assert.equal(selector, 'button');
+      return button;
+    },
+  };
+  const password = { value: 'new-password-123' };
+  const confirmPassword = { value: 'new-password-123' };
+  const timers = [];
+  const location = { href: '' };
+
+  vm.runInNewContext(script, {
+    URLSearchParams,
+    fetch: async () => fetchResponse,
+    document: {
+      getElementById(id) {
+        return {
+          resetPasswordForm: form,
+          resetPasswordMessage: message,
+          newPassword: password,
+          confirmPassword,
+        }[id];
+      },
+    },
+    window: {
+      location,
+      setTimeout(callback, delay) {
+        timers.push({ callback, delay });
+      },
+    },
+  });
+
+  return { button, form, location, message, timers };
+}
 
 test('password reset schema and public responses do not reveal account existence', async () => {
   await app.initializeDatabase();
@@ -45,4 +92,36 @@ test('password reset schema and public responses do not reveal account existence
   } finally {
     await db.close();
   }
+});
+
+test('successful password resets redirect to login after two seconds only', async () => {
+  const success = loadResetPasswordPage({
+    fetchResponse: {
+      ok: true,
+      json: async () => ({ message: 'Password has been reset.' }),
+    },
+  });
+
+  await success.form.submitHandler({ preventDefault() {} });
+  assert.equal(success.message.textContent, 'Password reset successful! Redirecting you to login...');
+  assert.equal(success.button.disabled, true);
+  assert.equal(success.timers.length, 1);
+  assert.equal(success.timers[0].delay, 2000);
+  assert.equal(success.location.href, '');
+
+  success.timers[0].callback();
+  assert.equal(success.location.href, '/login.html');
+
+  const invalidToken = loadResetPasswordPage({
+    fetchResponse: {
+      ok: false,
+      json: async () => ({ error: 'This password reset link is invalid or has expired.' }),
+    },
+  });
+
+  await invalidToken.form.submitHandler({ preventDefault() {} });
+  assert.equal(invalidToken.message.textContent, 'This password reset link is invalid or has expired.');
+  assert.equal(invalidToken.button.disabled, false);
+  assert.equal(invalidToken.timers.length, 0);
+  assert.equal(invalidToken.location.href, '');
 });
