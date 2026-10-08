@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const jwt = require('jsonwebtoken');
 const app = require('../server');
 const { initializeDatabase } = require('../server');
@@ -7,6 +9,22 @@ const { initializeDatabase } = require('../server');
 function tokenFor(username, role, id) {
   return jwt.sign({ id, username, role }, process.env.JWT_SECRET || 'testsecret', { expiresIn: '7d' });
 }
+
+function readTemplate(fileName) {
+  return fs.readFileSync(path.join(__dirname, '..', fileName), 'utf8');
+}
+
+test('dashboard keeps newsroom navigation without the public site navigation', () => {
+  const dashboard = readTemplate('dashboard.html');
+  assert.match(dashboard, /<nav class="newsroom-nav" id="newsroomNav"/);
+  assert.doesNotMatch(dashboard, /<nav class="nav-primary"[\s\S]*?<\/nav>/);
+
+  const publicPages = ['index.html', 'news.html', 'business.html', 'arts.html', 'sports.html', 'community.html'];
+  for (const page of publicPages) {
+    const html = readTemplate(page);
+    assert.match(html, /<nav class="nav-primary"[^>]*>[\s\S]*?<a href="\/">Home<\/a>[\s\S]*?<a href="\/news\.html">News<\/a>[\s\S]*?<a href="\/business\.html">Business<\/a>[\s\S]*?<a href="\/arts\.html">Arts<\/a>[\s\S]*?<a href="\/sports\.html">Sports<\/a>[\s\S]*?<a href="\/community\.html">Community<\/a>[\s\S]*?<\/nav>/, `${page} public navigation changed`);
+  }
+});
 
 test('dashboard overview exposes role-aware newsroom counts', async () => {
   await initializeDatabase();
