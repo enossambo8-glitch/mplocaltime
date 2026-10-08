@@ -49,6 +49,7 @@
             <span>Password</span>
             <input id="loginPassword" name="password" type="password" autocomplete="current-password" required style="width:100%;padding:14px 16px;border:1px solid #dfe3e8;border-radius:16px;">
           </label>
+          <a href="/forgot-password.html" style="margin-top:-8px;">Forgot Password?</a>
           <button class="btn primary" type="submit">Login</button>
         </form>
         <div id="loginMessage" class="meta" role="status" aria-live="polite" style="margin-top:16px;color:#a00;"></div>
@@ -99,6 +100,13 @@
           <strong>© 2025 Mpumalanga Local Time</strong>
           <div class="meta-small">Trusted news for Mpumalanga communities.</div>
         </div>
+<div class="footer-policy-links" aria-label="Legal and privacy links">
+          <a href="/privacy-policy.html">Privacy Policy</a>
+          <a href="/privacy-statement.html">Privacy Statement</a>
+          <a href="/terms-and-conditions.html">Terms &amp; Conditions</a>
+          <a href="/code-of-conduct.html">Code of Conduct</a>
+          <a href="#cookie-settings" data-cookie-settings>Cookie Settings</a>
+        </div>
         <div class="social-links">
           <a href="/privacy-policy.html">Privacy</a>
           <a href="/terms-and-conditions.html">Terms</a>
@@ -144,6 +152,13 @@
       } catch (error) {
         loginMessage.textContent = 'Unable to reach the server. Please try again later.';
       }
+    });
+  </script>
+  <div id="cookie-consent-root"></div>
+  <script src="/cookie-consent.js" defer></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (window.CookieConsent) window.CookieConsent.init({ companyName: 'Mpumalanga Local Time', policyUrl: '/privacy-policy.html' });
     });
   </script>
 </body>

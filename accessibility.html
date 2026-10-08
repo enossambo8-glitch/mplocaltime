@@ -99,6 +99,13 @@
           <strong>© 2025 Mpumalanga Local Time</strong>
           <div class="meta-small">Trusted news for Mpumalanga communities.</div>
         </div>
+<div class="footer-policy-links" aria-label="Legal and privacy links">
+          <a href="/privacy-policy.html">Privacy Policy</a>
+          <a href="/privacy-statement.html">Privacy Statement</a>
+          <a href="/terms-and-conditions.html">Terms &amp; Conditions</a>
+          <a href="/code-of-conduct.html">Code of Conduct</a>
+          <a href="#cookie-settings" data-cookie-settings>Cookie Settings</a>
+        </div>
         <div class="social-links">
           <a href="/privacy-policy.html">Privacy</a>
           <a href="/terms-and-conditions.html">Terms</a>
@@ -107,5 +114,12 @@
       </div>
     </div>
   </footer>
+  <div id="cookie-consent-root"></div>
+  <script src="/cookie-consent.js" defer></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (window.CookieConsent) window.CookieConsent.init({ companyName: 'Mpumalanga Local Time', policyUrl: '/privacy-policy.html' });
+    });
+  </script>
 </body>
 </html>

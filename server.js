@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -58,6 +59,8 @@ const INITIAL_PASSWORD = process.env.INITIAL_PASSWORD || '';
 const INITIAL_USER_PASSWORD = process.env.INITIAL_USER_PASSWORD || '';
 const SEED_DEMO_USERS = Boolean(INITIAL_PASSWORD && INITIAL_USER_PASSWORD);
 const CANONICAL_ROLES = ['admin', 'editor', 'journalist', 'contributor', 'user'];
+const PASSWORD_RESET_EXPIRY_MINUTES = 30;
+const PASSWORD_RESET_MESSAGE = 'If an account exists for that email, a password reset link has been sent.';
 const AD_PLACEMENTS = ['homepage_top', 'homepage_mid', 'homepage_sidebar', 'article_top', 'article_inline', 'article_sidebar', 'article_bottom', 'category_top', 'category_sidebar', 'municipality_top', 'municipality_sidebar'];
 
 function normalizeAdsensePublisherId(value) {
@@ -129,7 +132,11 @@ CookieConsent.init({
 
 function sendHtmlFileWithAdsense(res, filePath) {
   try {
-    const html = fs.readFileSync(filePath, 'utf8');
+    let html = fs.readFileSync(filePath, 'utf8');
+    if (/<!--\s*#include\s+virtual="\/footer\.html"\s*-->/i.test(html)) {
+      const footer = fs.readFileSync(path.join(__dirname, 'footer.html'), 'utf8');
+      html = html.replace(/<!--\s*#include\s+virtual="\/footer\.html"\s*-->/gi, footer);
+    }
     return res.type('text/html; charset=utf-8').send(injectAdsenseScriptIntoHtml(html));
   } catch (error) {
     return res.status(500).send('Unable to read page template.');
@@ -242,6 +249,64 @@ function parseNumericParam(value, fallback = 0) {
 function parseFloatParam(value, fallback = 0) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeEmail(value) {
+  const email = String(value ?? '').trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '';
+  return email;
+}
+
+function getSiteUrl() {
+  return String(process.env.SITE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
+}
+
+function formatDatabaseTimestamp(date = new Date()) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function parseDatabaseTimestamp(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return NaN;
+  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  return new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized) ? normalized : `${normalized}Z`).getTime();
+}
+
+function getPasswordResetTransport() {
+  const host = String(process.env.SMTP_HOST || '').trim();
+  const user = String(process.env.SMTP_USER || '').trim();
+  const password = String(process.env.SMTP_PASSWORD || '');
+  const port = Number.parseInt(process.env.SMTP_PORT || '587', 10) || 587;
+  if (!host || !user || !password) {
+    throw new Error('SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured for password reset email.');
+  }
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465,
+    auth: { user, pass: password },
+  });
+}
+
+async function sendPasswordResetEmail(email, token) {
+  const resetUrl = `${getSiteUrl()}/reset-password.html?token=${encodeURIComponent(token)}`;
+  const htmlResetUrl = resetUrl.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
+  const from = String(process.env.SMTP_FROM || process.env.SMTP_USER || '').trim();
+  if (!from) throw new Error('SMTP_FROM or SMTP_USER must be configured for password reset email.');
+  const transport = getPasswordResetTransport();
+  await transport.sendMail({
+    from,
+    to: email,
+    subject: 'Reset your Mpumalanga Local Time password',
+    text: `Use this link to reset your password: ${resetUrl}\n\nThis link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes and can only be used once.`,
+    html: `<p>Use the link below to reset your password:</p><p><a href="${htmlResetUrl}">Reset your password</a></p><p>This link expires in ${PASSWORD_RESET_EXPIRY_MINUTES} minutes and can only be used once.</p>`,
+  });
 }
 
 function parseCanonicalRole(value, { allowDefaultUser = true, fallback = 'user' } = {}) {
@@ -566,6 +631,7 @@ async function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
+        email TEXT,
         bio TEXT,
         avatar TEXT,
         role TEXT NOT NULL DEFAULT 'user',
@@ -579,6 +645,17 @@ async function initializeDatabase() {
         created_at TEXT,
         updated_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens (user_id);
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expiry ON password_reset_tokens (expires_at);
       CREATE TABLE IF NOT EXISTS municipalities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         district_id INTEGER NOT NULL,
@@ -1003,8 +1080,24 @@ async function initializeDatabase() {
 
     const userColumns = await db.all(`PRAGMA table_info(users)`);
     const columnNames = userColumns.map((col) => col.name);
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens (user_id);
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expiry ON password_reset_tokens (expires_at);
+    `);
     if (!columnNames.includes('bio')) {
       await db.run(`ALTER TABLE users ADD COLUMN bio TEXT`);
+    }
+    if (!columnNames.includes('email')) {
+      await db.run(`ALTER TABLE users ADD COLUMN email TEXT`);
     }
     if (!columnNames.includes('avatar')) {
       await db.run(`ALTER TABLE users ADD COLUMN avatar TEXT`);
@@ -1240,6 +1333,7 @@ async function initializeDatabase() {
         DELETE FROM events;
         DELETE FROM opportunities;
         DELETE FROM users;
+        DELETE FROM password_reset_tokens;
         DELETE FROM sqlite_sequence WHERE name IN ('stories', 'comments', 'revision_history', 'editorial_reviews', 'breaking_news', 'media', 'notifications', 'messages', 'correction_requests', 'newsletter_subscribers', 'push_preferences', 'weather_locations', 'artist_reviews', 'artist_bookings', 'artists', 'creative_organisations', 'venues', 'events', 'opportunities', 'users');
       `);
       hasResetTestDatabase = true;
@@ -1504,6 +1598,8 @@ if (!fs.existsSync(mediaUploadsDir)) {
   fs.mkdirSync(mediaUploadsDir, { recursive: true });
 }
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts. Please try again later.' } });
+const passwordResetRequestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, message: { error: PASSWORD_RESET_MESSAGE } });
+const passwordResetCompletionLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many reset attempts. Please request a new link later.' } });
 const publicFormLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 25, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests. Please slow down and try again later.' } });
 const allowedOrigins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000', 'https://mplocaltime.co.za', 'https://www.mplocaltime.co.za']);
 const upload = multer({
@@ -2972,12 +3068,71 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   });
 });
 
+app.post('/api/password-reset/request', passwordResetRequestLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  if (!email) return res.json({ message: PASSWORD_RESET_MESSAGE });
+  try {
+    await withDB(async (db) => {
+      const user = await db.get('SELECT id, email, is_active FROM users WHERE lower(email) = ? LIMIT 1', [email]);
+      if (!user || !isActiveAccount(user.is_active)) return;
+
+      await db.run('UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL', [formatDatabaseTimestamp(), user.id]);
+      const rawToken = crypto.randomBytes(32).toString('base64url');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const createdAt = new Date();
+      const expiresAt = new Date(createdAt.getTime() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000);
+      await db.run(
+        'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)',
+        [user.id, tokenHash, formatDatabaseTimestamp(expiresAt), formatDatabaseTimestamp(createdAt)]
+      );
+      try {
+        await sendPasswordResetEmail(email, rawToken);
+      } catch (error) {
+        await db.run('UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ?', [formatDatabaseTimestamp(), tokenHash]);
+        throw error;
+      }
+    });
+    return res.json({ message: PASSWORD_RESET_MESSAGE });
+  } catch (error) {
+    console.error('Password reset email delivery failed:', error);
+    return res.status(500).json({ error: 'Unable to process your request right now. Please try again later.' });
+  }
+});
+
+app.post('/api/password-reset/complete', passwordResetCompletionLimiter, async (req, res) => {
+  const rawToken = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
+  const confirmPassword = typeof req.body?.confirmPassword === 'string' ? req.body.confirmPassword.trim() : '';
+  if (!rawToken || rawToken.length > 128 || password.length < 8 || password !== confirmPassword) {
+    return res.status(400).json({ error: 'Please provide matching passwords of at least 8 characters.' });
+  }
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  return withDB(async (db) => {
+    const token = await db.get('SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?', [tokenHash]);
+    const expiresAt = parseDatabaseTimestamp(token?.expires_at);
+    if (!token || token.used_at || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const usedAt = formatDatabaseTimestamp();
+    const result = await db.run('UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL', [usedAt, token.id]);
+    if (Number(result.changes || result.affectedRows || 0) !== 1) {
+      return res.status(400).json({ error: 'This password reset link is invalid or has expired.' });
+    }
+    await db.run('UPDATE users SET password = ? WHERE id = ?', [passwordHash, token.user_id]);
+    await db.run('UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL', [usedAt, token.user_id]);
+    return res.json({ message: 'Your password has been reset. You can now log in.' });
+  });
+});
+
 app.post('/api/register', loginLimiter, async (req, res) => {
   const { username, password, role } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'username and password required' });
   const safeUsername = sanitizeUsername(username);
   const safePassword = String(password).trim();
   if (!safeUsername || !safePassword || safePassword.length < 8) return res.status(400).json({ error: 'username and password required' });
+  const email = req.body?.email ? normalizeEmail(req.body.email) : '';
+  if (req.body?.email && !email) return res.status(400).json({ error: 'email must be valid' });
   if (role !== undefined && role !== null) {
     const requestedRole = parseCanonicalRole(role, { allowDefaultUser: true, fallback: 'user' });
     if (requestedRole !== 'user') {
@@ -2985,10 +3140,10 @@ app.post('/api/register', loginLimiter, async (req, res) => {
     }
   }
   return withDB(async (db) => {
-    const exists = await db.get(`SELECT id FROM users WHERE username = ?`, [safeUsername]);
+    const exists = await db.get(`SELECT id FROM users WHERE username = ? OR (? <> '' AND lower(email) = ?)`, [safeUsername, email, email]);
     if (exists) return res.status(409).json({ error: 'username taken' });
     const hash = await bcrypt.hash(safePassword, 10);
-    const r = await db.run(`INSERT INTO users (username, password, role, is_active) VALUES (?,?,?,1)`, [safeUsername, hash, 'user']);
+    const r = await db.run(`INSERT INTO users (username, password, email, role, is_active) VALUES (?,?,?,?,1)`, [safeUsername, hash, email || null, 'user']);
     const user = await db.get(`SELECT id, username, role FROM users WHERE id = ?`, [r.lastID]);
     const roleName = normalizeRoleName(user.role, 'user');
     const token = jwt.sign({ id: user.id, username: user.username, role: roleName }, SECRET, { expiresIn: '7d' });

@@ -71,5 +71,13 @@
       </div>
     </section>
   </main>
+  <div id="cookie-consent-root"></div>
+  <script src="/cookie-consent.js" defer></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (window.CookieConsent) window.CookieConsent.init({ companyName: 'Mpumalanga Local Time', policyUrl: '/privacy-policy.html' });
+    });
+  </script>
+  <div style="margin-top:28px"><!--#include virtual="/footer.html"--></div>
 </body>
 </html>

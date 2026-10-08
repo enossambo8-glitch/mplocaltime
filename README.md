@@ -36,6 +36,7 @@ npm start
 5. Set `JWT_SECRET`, `INITIAL_PASSWORD`, and `INITIAL_USER_PASSWORD` explicitly.
 6. Leave `ADSENSE_ENABLED=false` until a valid approved Google publisher configuration exists.
 7. Run `npm run db:migrate` after creating the database user and schema.
+8. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` for password-reset email delivery.
 
 ## Repository commands
 
@@ -60,4 +61,5 @@ Use the deployment documentation in [DEPLOYMENT.md](./DEPLOYMENT.md) for the ful
 - `.env` must remain untracked.
 - `SITE_URL` must be the trusted production domain, not a request Host header.
 - The `DB_PASSWORD` and other database settings are never printed in logs.
+- Password-reset links are single-use and expire after 30 minutes.
 - AdSense remains inactive by default; activation requires a legitimate Google publisher setup.

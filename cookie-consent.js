@@ -201,11 +201,21 @@
 
   function savePreferences(){ state.analytics = !!ui.inputs.analytics.checked; state.marketing = !!ui.inputs.marketing.checked; state.functional = !!ui.inputs.functional.checked; state.necessary = true; saveState(); applyGoogleConsent(); }
 
+  function bindSettingsLinks(){
+    document.querySelectorAll('[data-cookie-settings]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        openPreferences();
+      });
+    });
+  }
+
   // Initialization
   function init(options){
     cfg = Object.assign({}, defaults, options || {});
     // create UI
     ui = createBanner();
+    bindSettingsLinks();
     state = loadState();
     if (state){
       // previously chosen

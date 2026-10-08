@@ -150,7 +150,7 @@
             <li><a href="/privacy-statement.html">Privacy Statement</a></li>
             <li><a href="/terms-and-conditions.html">Terms & Conditions</a></li>
             <li><a href="/code-of-conduct.html">Code of Conduct</a></li>
-            <li><a href="#" onclick="CookieConsent.openPreferences();return false;">Cookie Settings</a></li>
+            <li><a href="#cookie-settings" data-cookie-settings>Cookie Settings</a></li>
           </ul>
         </div>
 
@@ -183,5 +183,12 @@
       <!-- If server does not support SSI, copy footer.html content instead -->
     </div>
   </main>
+  <div id="cookie-consent-root"></div>
+  <script src="/cookie-consent.js" defer></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (window.CookieConsent) window.CookieConsent.init({ companyName: 'Mpumalanga Local Time', policyUrl: '/privacy-policy.html' });
+    });
+  </script>
 </body>
 </html>
