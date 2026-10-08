@@ -5612,7 +5612,7 @@ app.get('/api/category/:category', async (req, res) => {
 if (require.main === module) {
   const shouldProcessScheduledStories = process.argv.includes('--process-scheduled-stories');
   if (shouldProcessScheduledStories) {
-    initializeDatabase()
+    Promise.resolve()
       .then(async () => {
         const db = await init();
         try {
